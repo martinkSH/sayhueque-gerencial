@@ -20,6 +20,7 @@ type FileRow = {
 
 type SortKey = keyof FileRow
 type SortDir = 'asc' | 'desc'
+type Rango = { cm_min: number; cm_max: number }
 
 function getCmColor(cm: number, rango: Rango): { bg: string; color: string; label: string } {
   const { cm_min, cm_max } = rango

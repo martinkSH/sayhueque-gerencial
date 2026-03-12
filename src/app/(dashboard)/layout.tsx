@@ -9,13 +9,16 @@ export default async function DashboardLayout({ children }: { children: React.Re
 
   const { data: profile } = await supabase
     .from('profiles')
-    .select('full_name, role')
+    .select('full_name, role, areas')
     .eq('id', user.id)
     .single()
 
+  const role = profile?.role ?? 'comercial'
+  const areas: string[] = profile?.areas ?? []
+
   return (
     <div className="flex h-screen overflow-hidden" style={{ background: 'var(--bg)' }}>
-      <Sidebar user={{ email: user.email ?? '', name: profile?.full_name ?? '', role: profile?.role ?? 'viewer' }} />
+      <Sidebar user={{ email: user.email ?? '', name: profile?.full_name ?? '', role, areas }} />
       <main className="flex-1 overflow-y-auto">
         <div className="p-6 lg:p-8 animate-fade-in">
           {children}

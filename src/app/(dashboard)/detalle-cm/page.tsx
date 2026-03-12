@@ -1,8 +1,9 @@
 import { createClient } from '@/lib/supabase/server'
-import { getUserProfile, expandAreas, B2C_AREAS } from '@/lib/user-context'
+import { getUserProfile, expandAreas } from '@/lib/user-context'
 import DetalleCMClient from './DetalleCMClient'
 
 const ESTADOS = ['Final + Day by Day','Final','Confirmed','Pre Final','En Operaciones','Cerrado','Cierre Operativo']
+const PAGE_SIZE = 1000
 
 export default async function DetalleCMPage({
   searchParams,
@@ -25,27 +26,12 @@ export default async function DetalleCMPage({
 
   const uploadId = lastUpload.id
 
-  // Áreas disponibles via RPC para evitar límite 1000
+  // Áreas disponibles via RPC
   const { data: areasRaw } = await supabase
     .rpc('get_areas_disponibles', { p_upload_id: uploadId, p_temporada: temp })
 
-  // Si no existe la RPC, fallback con query paginada
-  let available: string[] = []
-  if (areasRaw && Array.isArray(areasRaw)) {
-    available = (areasRaw as { booking_branch: string }[]).map(r => r.booking_branch).filter(Boolean).sort()
-  } else {
-    // Fallback: obtener áreas únicas con GROUP BY via query distinta
-    const { data: fallback } = await supabase
-      .from('team_leader_rows')
-      .select('booking_branch')
-      .eq('upload_id', uploadId)
-      .eq('temporada', temp)
-      .in('estado', ESTADOS)
-      .limit(10000)
-    const set = new Set<string>()
-    fallback?.forEach((r: { booking_branch: string | null }) => { if (r.booking_branch) set.add(r.booking_branch) })
-    available = Array.from(set).sort()
-  }
+  let available: string[] = ((areasRaw ?? []) as { booking_branch: string }[])
+    .map(r => r.booking_branch).filter(Boolean).sort()
 
   if (expandedUserAreas) {
     available = available.filter(a => expandedUserAreas.includes(a))
@@ -59,14 +45,7 @@ export default async function DetalleCMPage({
     Object.fromEntries((rangosRaw ?? []).map((r: { area: string; cm_min: number; cm_max: number }) => [r.area, r]))
   const rango = rangos[areaFiltro] ?? { cm_min: 0.10, cm_max: 0.30 }
 
-  // Filas via RPC (sin límite 1000)
-  const { data: rpcRows } = await supabase
-    .rpc('get_detalle_cm', {
-      p_upload_id: uploadId,
-      p_temporada: temp,
-      p_area: areaFiltro,
-    })
-
+  // Paginación para superar límite 1000 de Supabase
   type RpcRow = {
     file_code: string; booking_branch: string; vendedor: string | null
     cliente: string | null; booking_department: string | null
@@ -75,24 +54,102 @@ export default async function DetalleCMPage({
     venta_tl: number | null; venta_sf: number | null; is_b2c: boolean
   }
 
-  const files = ((rpcRows ?? []) as RpcRow[]).map(r => {
-    const venta = r.is_b2c && r.venta_sf !== null ? r.venta_sf : (r.venta_tl ?? 0)
-    const costo = r.costo ?? 0
-    const ganancia = venta - costo
-    const cm = venta > 0 ? ganancia / venta : 0
-    return {
+  let allRows: RpcRow[] = []
+  let offset = 0
+  let keepFetching = true
+
+  while (keepFetching) {
+    const { data: batch } = await supabase
+      .from('team_leader_rows')
+      .select('file_code, booking_branch, vendedor, cliente, booking_department, fecha_in, fecha_out, estado, cant_pax, costo, venta, is_b2c')
+      .eq('upload_id', uploadId)
+      .eq('temporada', temp)
+      .eq('booking_branch', areaFiltro)
+      .in('estado', ESTADOS)
+      .order('file_code')
+      .range(offset, offset + PAGE_SIZE - 1)
+
+    if (!batch || batch.length === 0) break
+
+    // Mapear a RpcRow shape
+    const mapped = batch.map((r: {
+      file_code: string; booking_branch: string | null; vendedor: string | null
+      cliente: string | null; booking_department: string | null; fecha_in: string | null
+      fecha_out: string | null; estado: string | null; cant_pax: number | null
+      costo: number | null; venta: number | null; is_b2c: boolean
+    }) => ({
       file_code: r.file_code,
-      area: r.booking_branch ?? '',
-      vendedor: r.vendedor ?? '—',
-      cliente: r.cliente ?? '—',
-      departamento: r.booking_department ?? '—',
-      fecha_in: r.fecha_in ?? '',
-      fecha_out: r.fecha_out ?? '',
-      estado: r.estado ?? '',
-      pax: r.cant_pax ?? 0,
-      costo, venta, ganancia, cm,
+      booking_branch: r.booking_branch ?? '',
+      vendedor: r.vendedor,
+      cliente: r.cliente,
+      booking_department: r.booking_department,
+      fecha_in: r.fecha_in,
+      fecha_out: r.fecha_out,
+      estado: r.estado,
+      cant_pax: r.cant_pax,
+      costo: r.costo,
+      venta_tl: r.venta,
+      venta_sf: null, // se completa abajo con sfMap
+      is_b2c: r.is_b2c,
+    }))
+
+    allRows = allRows.concat(mapped)
+    if (batch.length < PAGE_SIZE) keepFetching = false
+    else offset += PAGE_SIZE
+  }
+
+  // Salesforce map para B2C — también paginado
+  const sfMap = new Map<string, number>()
+  const b2cFileCodes = allRows.filter(r => r.is_b2c).map(r => r.file_code.toUpperCase())
+
+  if (b2cFileCodes.length > 0) {
+    let sfOffset = 0
+    let sfFetching = true
+    while (sfFetching) {
+      const { data: sfBatch } = await supabase
+        .from('salesforce_rows')
+        .select('file_code, venta')
+        .eq('upload_id', uploadId)
+        .order('file_code')
+        .range(sfOffset, sfOffset + PAGE_SIZE - 1)
+
+      if (!sfBatch || sfBatch.length === 0) break
+      sfBatch.forEach((r: { file_code: string; venta: number | null }) =>
+        sfMap.set(r.file_code.toUpperCase(), r.venta ?? 0)
+      )
+      if (sfBatch.length < PAGE_SIZE) sfFetching = false
+      else sfOffset += PAGE_SIZE
     }
-  })
+  }
+
+  // Deduplicar por file_code y calcular métricas
+  const seen = new Set<string>()
+  const files = allRows
+    .filter(r => {
+      if (seen.has(r.file_code)) return false
+      seen.add(r.file_code)
+      return true
+    })
+    .map(r => {
+      const venta = r.is_b2c && sfMap.has(r.file_code.toUpperCase())
+        ? sfMap.get(r.file_code.toUpperCase())!
+        : (r.venta_tl ?? 0)
+      const costo = r.costo ?? 0
+      const ganancia = venta - costo
+      const cm = venta > 0 ? ganancia / venta : 0
+      return {
+        file_code: r.file_code,
+        area: r.booking_branch,
+        vendedor: r.vendedor ?? '—',
+        cliente: r.cliente ?? '—',
+        departamento: r.booking_department ?? '—',
+        fecha_in: r.fecha_in ?? '',
+        fecha_out: r.fecha_out ?? '',
+        estado: r.estado ?? '',
+        pax: r.cant_pax ?? 0,
+        costo, venta, ganancia, cm,
+      }
+    })
 
   return (
     <DetalleCMClient

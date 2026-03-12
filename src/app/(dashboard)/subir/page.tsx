@@ -145,7 +145,7 @@ export default function SubirPage() {
         <div style={{ marginTop: 16 }} className="card">
           <div style={{ padding: '16px 20px' }}>
             {[
-              { label: 'Subiendo archivo a storage', done: step === 'processing' || step === 'done', active: step === 'uploading-storage' },
+              { label: 'Subiendo archivo a storage', done: step === 'processing', active: step === 'uploading-storage' },
               { label: 'Parseando Reporte Team Leader', done: false, active: step === 'processing' },
               { label: 'Procesando Bookings Audit y SF', done: false, active: step === 'processing' },
               { label: 'Actualizando base de datos', done: false, active: step === 'processing' },

@@ -131,9 +131,8 @@ export default async function DetalleCMPage({
       return true
     })
     .map(r => {
-      const venta = r.is_b2c && sfMap.has(r.file_code.toUpperCase())
-        ? sfMap.get(r.file_code.toUpperCase())!
-        : (r.venta_tl ?? 0)
+      const hasSf = r.is_b2c && sfMap.has(r.file_code.toUpperCase())
+      const venta = hasSf ? sfMap.get(r.file_code.toUpperCase())! : (r.venta_tl ?? 0)
       const costo = r.costo ?? 0
       const ganancia = venta - costo
       const cm = venta > 0 ? ganancia / venta : 0
@@ -148,6 +147,7 @@ export default async function DetalleCMPage({
         estado: r.estado ?? '',
         pax: r.cant_pax ?? 0,
         costo, venta, ganancia, cm,
+        sin_sf: r.is_b2c && !hasSf,
       }
     })
 

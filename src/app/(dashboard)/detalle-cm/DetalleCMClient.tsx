@@ -15,6 +15,7 @@ type FileRow = {
   file_code: string; area: string; vendedor: string; cliente: string
   departamento: string; fecha_in: string; fecha_out: string; estado: string
   pax: number; costo: number; venta: number; ganancia: number; cm: number
+  sin_sf: boolean
 }
 
 
@@ -97,6 +98,7 @@ export default function DetalleCMClient({
   const enRango = sorted.filter(f => f.cm >= rangoMin && f.cm <= rangoMax).length
   const bajo = sorted.filter(f => f.cm < rangoMin).length
   const sobre = sorted.filter(f => f.cm > rangoMax).length
+  const sinSf = sorted.filter(f => f.sin_sf).length
 
   function SortIcon({ col }: { col: SortKey }) {
     if (sortKey !== col) return <ArrowUpDown size={11} style={{ opacity: 0.3 }} />
@@ -148,6 +150,7 @@ export default function DetalleCMClient({
           { label: 'Bajo mínimo', value: bajo, color: '#f87171', sub: `< ${Math.round(rangoMin*100)}%` },
           { label: 'Sobre máximo', value: sobre, color: '#60a5fa', sub: `> ${Math.round(rangoMax*100)}%` },
           { label: 'CM promedio', value: `${(totalCM*100).toFixed(1)}%`, color: totalCM >= rangoMin && totalCM <= rangoMax ? '#4ade80' : '#fb923c', sub: formatUSD(totalGanancia) },
+          ...(sinSf > 0 ? [{ label: 'Sin match SF', value: sinSf, color: '#fbbf24', sub: 'B2C sin Salesforce' }] : []),
         ].map(k => (
           <div key={k.label} className="card" style={{ padding: '14px 18px' }}>
             <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 6 }}>{k.label}</div>
@@ -239,7 +242,16 @@ export default function DetalleCMClient({
                     <td style={{ padding: '8px 14px', color: 'var(--muted)', whiteSpace: 'nowrap' }}>{r.vendedor}</td>
                     <td style={{ padding: '8px 14px', textAlign: 'right', color: 'var(--muted)', fontFamily: 'var(--font-mono)' }}>{r.pax}</td>
                     <td style={{ padding: '8px 14px', textAlign: 'right', color: 'var(--muted)', fontFamily: 'var(--font-mono)', whiteSpace: 'nowrap' }}>{formatUSD(r.costo)}</td>
-                    <td style={{ padding: '8px 14px', textAlign: 'right', color: 'var(--text)', fontFamily: 'var(--font-mono)', whiteSpace: 'nowrap' }}>{formatUSD(r.venta)}</td>
+                    <td style={{ padding: '8px 14px', textAlign: 'right', color: 'var(--text)', fontFamily: 'var(--font-mono)', whiteSpace: 'nowrap' }}>
+                      {formatUSD(r.venta)}
+                      {r.sin_sf && (
+                        <span title="B2C sin match en Salesforce — usando venta de Team Leader" style={{
+                          marginLeft: 6, fontSize: 10, padding: '1px 5px', borderRadius: 4,
+                          background: 'rgba(251,191,36,0.15)', color: '#fbbf24',
+                          border: '1px solid rgba(251,191,36,0.3)', verticalAlign: 'middle',
+                        }}>SF?</span>
+                      )}
+                    </td>
                     <td style={{ padding: '8px 14px', textAlign: 'right', fontFamily: 'var(--font-mono)', whiteSpace: 'nowrap',
                       color: r.ganancia < 0 ? '#f87171' : 'var(--text)' }}>{formatUSD(r.ganancia)}</td>
                     <td style={{ padding: '8px 14px', textAlign: 'right', whiteSpace: 'nowrap' }}>

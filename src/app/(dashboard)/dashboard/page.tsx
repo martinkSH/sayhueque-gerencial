@@ -204,25 +204,66 @@ export default async function DashboardPage({
           <h2 style={{ fontSize: 14, fontWeight: 600, color: 'var(--text)', margin: 0 }}>Ganancia por área — temporada 25/26</h2>
         </div>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-          {areasSorted.map((row, idx) => {
-            const maxGan = areasSorted[0]?.ganancia || 1
-            const pct = Math.max(0, (row.ganancia / maxGan) * 100)
-            const cm = row.venta > 0 ? row.ganancia / row.venta : 0
+          {(() => {
+            // Agrupar B2C (Web + Plataformas + Walk In)
+            const b2cAreas = ['Web', 'Plataformas', 'Walk In']
+            const b2c = { venta: 0, ganancia: 0 }
+            const otros: typeof areasSorted = []
+            areasSorted.forEach(row => {
+              if (b2cAreas.includes(row.area)) {
+                b2c.venta += row.venta
+                b2c.ganancia += row.ganancia
+              } else {
+                otros.push(row)
+              }
+            })
+            const rows = [{ area: 'B2C (Web + Plataformas + Walk In)', ...b2c }, ...otros]
+            const maxGan = Math.max(...rows.map(r => r.ganancia), 1)
+            const totalVenta = rows.reduce((s, r) => s + r.venta, 0)
+            const totalGanancia = rows.reduce((s, r) => s + r.ganancia, 0)
+            const totalCM = totalVenta > 0 ? totalGanancia / totalVenta : 0
+
             return (
-              <div key={row.area}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
-                  <span style={{ fontSize: 13, color: 'var(--text)' }}>{row.area}</span>
-                  <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
-                    <span style={{ fontSize: 11, color: 'var(--muted)', fontFamily: 'var(--font-mono)' }}>CM {(cm * 100).toFixed(1)}%</span>
-                    <span style={{ fontSize: 13, fontWeight: 500, color: row.ganancia < 0 ? '#f87171' : 'var(--text)', fontFamily: 'var(--font-mono)' }}>{formatUSD(row.ganancia)}</span>
+              <>
+                {rows.map(row => {
+                  const pct = Math.max(0, (row.ganancia / maxGan) * 100)
+                  const cm = row.venta > 0 ? row.ganancia / row.venta : 0
+                  return (
+                    <div key={row.area}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
+                        <span style={{ fontSize: 13, color: row.area.startsWith('B2C') ? 'var(--teal-400)' : 'var(--text)', fontWeight: row.area.startsWith('B2C') ? 600 : 400 }}>{row.area}</span>
+                        <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
+                          <span style={{ fontSize: 11, color: 'var(--muted)', fontFamily: 'var(--font-mono)' }}>CM {(cm * 100).toFixed(1)}%</span>
+                          <span style={{ fontSize: 13, fontWeight: 500, color: row.ganancia < 0 ? '#f87171' : 'var(--text)', fontFamily: 'var(--font-mono)' }}>{formatUSD(row.ganancia)}</span>
+                        </div>
+                      </div>
+                      <div style={{ height: 4, background: 'var(--surface2)', borderRadius: 2 }}>
+                        <div style={{ height: '100%', width: `${pct}%`, background: row.area.startsWith('B2C') ? 'var(--teal-500)' : 'var(--teal-700)', borderRadius: 2 }} />
+                      </div>
+                    </div>
+                  )
+                })}
+                {/* Total empresa */}
+                <div style={{ marginTop: 8, paddingTop: 12, borderTop: '2px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--text)' }}>TOTAL EMPRESA</span>
+                  <div style={{ display: 'flex', gap: 20, alignItems: 'center' }}>
+                    <div style={{ textAlign: 'right' }}>
+                      <div style={{ fontSize: 10, color: 'var(--muted)' }}>Venta</div>
+                      <div style={{ fontSize: 13, fontFamily: 'var(--font-mono)', color: 'var(--text)' }}>{formatUSD(totalVenta)}</div>
+                    </div>
+                    <div style={{ textAlign: 'right' }}>
+                      <div style={{ fontSize: 10, color: 'var(--muted)' }}>Ganancia</div>
+                      <div style={{ fontSize: 13, fontFamily: 'var(--font-mono)', fontWeight: 700, color: '#4ade80' }}>{formatUSD(totalGanancia)}</div>
+                    </div>
+                    <div style={{ textAlign: 'right' }}>
+                      <div style={{ fontSize: 10, color: 'var(--muted)' }}>CM</div>
+                      <div style={{ fontSize: 13, fontFamily: 'var(--font-mono)', fontWeight: 700, color: 'var(--teal-400)' }}>{(totalCM * 100).toFixed(1)}%</div>
+                    </div>
                   </div>
                 </div>
-                <div style={{ height: 4, background: 'var(--surface2)', borderRadius: 2 }}>
-                  <div style={{ height: '100%', width: `${pct}%`, background: 'var(--teal-600)', borderRadius: 2 }} />
-                </div>
-              </div>
+              </>
             )
-          })}
+          })()}
         </div>
       </div>
 

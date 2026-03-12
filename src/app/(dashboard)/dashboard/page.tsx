@@ -59,7 +59,7 @@ export default async function DashboardPage({
   const ventaConfirmados = confirmados?.reduce((s, r) => s + (r.venta ?? 0), 0) ?? 0
 
   // Futuros hasta 30/04 — via RPC
-  const { data: futurosKpi } = await supabase
+  const { data: futurosKpiRaw } = await supabase
     .rpc('get_futuros_kpi', {
       p_upload_id: uploadId,
       p_today: today,
@@ -67,6 +67,7 @@ export default async function DashboardPage({
     })
     .single()
 
+  const futurosKpi = futurosKpiRaw as { viajes: number; venta: number; ganancia: number } | null
   const totalFuturos = futurosKpi?.viajes ?? 0
   const ventaFutura = futurosKpi?.venta ?? 0
   const gananciaFutura = futurosKpi?.ganancia ?? 0

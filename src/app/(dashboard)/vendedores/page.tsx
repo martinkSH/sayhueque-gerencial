@@ -1,12 +1,12 @@
 import { createClient } from '@/lib/supabase/server'
 import { TrendingUp } from 'lucide-react'
+import { getUserProfile, expandAreas } from '@/lib/user-context'
 
 function formatUSD(n: number) {
   return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 }).format(n)
 }
 
 const TEMPORADAS = ['25/26', '24/25', '23/24', '26/27']
-const B2C_AREAS = ['Web', 'Plataformas', 'Walk In']
 
 export default async function VendedoresPage({
   searchParams,
@@ -14,20 +14,16 @@ export default async function VendedoresPage({
   searchParams: { temp?: string; area?: string }
 }) {
   const supabase = createClient()
+  const userProfile = await getUserProfile()
+  const isAdmin = userProfile?.role === 'admin'
+  const userAreas = userProfile?.areas ?? []
   const temp = searchParams.temp ?? '25/26'
-  const areaFiltro = searchParams.area ?? 'todas'
 
   const { data: lastUpload } = await supabase
-    .from('uploads')
-    .select('id, filename')
-    .eq('status', 'ok')
-    .order('created_at', { ascending: false })
-    .limit(1)
-    .single()
+    .from('uploads').select('id, filename').eq('status', 'ok')
+    .order('created_at', { ascending: false }).limit(1).single()
 
-  if (!lastUpload) {
-    return <div style={{ textAlign: 'center', marginTop: 80, color: 'var(--muted)' }}>Sin datos. Subí un Excel primero.</div>
-  }
+  if (!lastUpload) return <div style={{ textAlign: 'center', marginTop: 80, color: 'var(--muted)' }}>Sin datos.</div>
 
   const { data: rawRanking } = await supabase
     .rpc('get_ranking_vendedores', { p_upload_id: lastUpload.id, p_temporada: temp })
@@ -35,14 +31,23 @@ export default async function VendedoresPage({
   type VRow = { vendedor: string; area: string; viajes: number; pax: number; venta: number; ganancia: number }
   const allRanking = (rawRanking ?? []) as VRow[]
 
-  // Áreas disponibles para el selector
-  const areasSet = new Set(allRanking.map(r => r.area))
-  const areaOptions = ['todas', 'B2C', ...Array.from(areasSet).filter(a => a !== 'B2C').sort()]
+  // Para comercial: filtrar solo sus áreas
+  const expandedUserAreas = isAdmin ? null : expandAreas(userAreas)
+  const rankingPorRol = expandedUserAreas
+    ? allRanking.filter(r => {
+        if (r.area === 'B2C') return expandedUserAreas.some(a => ['Web','Plataformas','Walk In'].includes(a))
+        return expandedUserAreas.includes(r.area)
+      })
+    : allRanking
 
-  // Filtrar por área
+  // Áreas disponibles para filtro (solo las del usuario)
+  const areasSet = new Set(rankingPorRol.map(r => r.area))
+  const areaOptions = ['todas', ...Array.from(areasSet).sort()]
+  const areaFiltro = searchParams.area ?? 'todas'
+
   const ranking = areaFiltro === 'todas'
-    ? allRanking
-    : allRanking.filter(r => r.area === areaFiltro)
+    ? rankingPorRol
+    : rankingPorRol.filter(r => r.area === areaFiltro)
 
   const totalVenta = ranking.reduce((s, r) => s + r.venta, 0)
   const totalGanancia = ranking.reduce((s, r) => s + r.ganancia, 0)
@@ -51,14 +56,11 @@ export default async function VendedoresPage({
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
-
-      {/* Header */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: 12 }}>
         <div>
           <h1 style={{ fontSize: 22, fontWeight: 600, color: 'var(--text)', margin: 0 }}>Ranking Vendedores</h1>
-          <p style={{ color: 'var(--muted)', fontSize: 13, marginTop: 4 }}>Temporada {temp} · estados confirmados · {lastUpload.filename}</p>
+          <p style={{ color: 'var(--muted)', fontSize: 13, marginTop: 4 }}>Temporada {temp} · {lastUpload.filename}</p>
         </div>
-        {/* Selector temporada */}
         <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
           {TEMPORADAS.map(t => (
             <a key={t} href={`?temp=${t}&area=${areaFiltro}`} style={{
@@ -71,7 +73,6 @@ export default async function VendedoresPage({
         </div>
       </div>
 
-      {/* Filtro área */}
       <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
         {areaOptions.map(a => (
           <a key={a} href={`?temp=${temp}&area=${encodeURIComponent(a)}`} style={{
@@ -83,7 +84,6 @@ export default async function VendedoresPage({
         ))}
       </div>
 
-      {/* Tabla */}
       <div className="card" style={{ overflow: 'hidden' }}>
         <div style={{ padding: '14px 20px', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', gap: 8 }}>
           <TrendingUp size={15} style={{ color: 'var(--teal-400)' }} />
@@ -106,14 +106,11 @@ export default async function VendedoresPage({
             </thead>
             <tbody>
               {ranking.length === 0 ? (
-                <tr><td colSpan={8} style={{ padding: '28px 20px', textAlign: 'center', color: 'var(--muted)' }}>Sin datos para esta selección</td></tr>
+                <tr><td colSpan={8} style={{ padding: '28px 20px', textAlign: 'center', color: 'var(--muted)' }}>Sin datos</td></tr>
               ) : ranking.map((r, i) => {
                 const cm = r.venta > 0 ? r.ganancia / r.venta : 0
                 return (
-                  <tr key={`${r.vendedor}-${r.area}`} style={{
-                    borderTop: '1px solid var(--border)',
-                    background: i % 2 === 0 ? 'transparent' : 'rgba(255,255,255,0.01)',
-                  }}>
+                  <tr key={`${r.vendedor}-${r.area}`} style={{ borderTop: '1px solid var(--border)', background: i % 2 === 0 ? 'transparent' : 'rgba(255,255,255,0.01)' }}>
                     <td style={{ padding: '10px 16px', color: 'var(--muted)', fontFamily: 'var(--font-mono)', fontSize: 12 }}>
                       {i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : `${i + 1}`}
                     </td>

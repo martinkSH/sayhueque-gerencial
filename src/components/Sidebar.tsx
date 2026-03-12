@@ -1,6 +1,7 @@
 'use client'
 
 import Link from 'next/link'
+import Image from 'next/image'
 import { usePathname } from 'next/navigation'
 import {
   LayoutDashboard, CheckSquare, Calendar, TrendingUp,
@@ -49,17 +50,20 @@ export default function Sidebar({ user }: Props) {
       height: '100vh', overflow: 'hidden',
     }}>
       {/* Logo */}
-      <div style={{ padding: '24px 20px 16px', borderBottom: '1px solid var(--border)' }}>
+      <div style={{ padding: '20px 20px 14px', borderBottom: '1px solid var(--border)' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
           <div style={{
-            width: 32, height: 32, borderRadius: 8,
-            background: 'var(--teal-600)',
+            width: 36, height: 36, borderRadius: 8,
+            background: '#000',
             display: 'flex', alignItems: 'center', justifyContent: 'center',
-            fontWeight: 700, fontSize: 14, color: 'white',
-          }}>SH</div>
+            flexShrink: 0, overflow: 'hidden',
+          }}>
+            <Image src="/logo.png" alt="Say Hueque" width={28} height={28} style={{ objectFit: 'contain' }} />
+          </div>
           <div>
             <div style={{ fontWeight: 600, fontSize: 13, color: 'var(--text)' }}>Say Hueque</div>
-            <div style={{ fontSize: 11, color: 'var(--muted)' }}>Gerencial</div>
+            <div style={{ fontSize: 10, color: 'var(--muted)' }}>Gerencial</div>
+            <div style={{ fontSize: 9, color: 'var(--muted)', opacity: 0.55, marginTop: 1 }}>developed by Martin Kravetz</div>
           </div>
         </div>
       </div>

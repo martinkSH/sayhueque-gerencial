@@ -25,14 +25,13 @@ export default async function DetalleCMPage({
 
   const uploadId = lastUpload.id
 
-  // Áreas disponibles
   const { data: areasRaw } = await supabase
     .from('team_leader_rows').select('booking_branch')
     .eq('upload_id', uploadId).eq('temporada', temp)
     .in('estado', ESTADOS).limit(10000)
 
   const areasSet = new Set<string>()
-  areasRaw?.forEach(r => { if (r.booking_branch) areasSet.add(r.booking_branch) })
+  areasRaw?.forEach((r: { booking_branch: string | null }) => { if (r.booking_branch) areasSet.add(r.booking_branch) })
 
   const available = expandedUserAreas
     ? Array.from(areasSet).filter(a => expandedUserAreas.includes(a))
@@ -41,16 +40,13 @@ export default async function DetalleCMPage({
 
   const areaFiltro = searchParams.area ?? available[0] ?? 'Web'
 
-  // Rangos CM
   const { data: rangosRaw } = await supabase.from('cm_rangos').select('area, cm_min, cm_max')
-  const rangos = Object.fromEntries((rangosRaw ?? []).map(r => [r.area, r]))
+  const rangos: Record<string, { area: string; cm_min: number; cm_max: number }> = 
+    Object.fromEntries((rangosRaw ?? []).map((r: { area: string; cm_min: number; cm_max: number }) => [r.area, r]))
 
-  // Rango para el área seleccionada
-  // Si es B2C (Web/Plat/WalkIn) no agrupamos, mostramos individual
   const rango = rangos[areaFiltro] ?? { cm_min: 0.10, cm_max: 0.30 }
 
-  // Files del área
-  let query = supabase
+  const { data: tlRows } = await supabase
     .from('team_leader_rows')
     .select('file_code, booking_branch, vendedor, cliente, booking_department, fecha_in, fecha_out, estado, cant_pax, costo, venta, is_b2c')
     .eq('upload_id', uploadId)
@@ -59,34 +55,24 @@ export default async function DetalleCMPage({
     .in('estado', ESTADOS)
     .limit(10000)
 
-  const { data: tlRows } = await query
-
-  // Salesforce para B2C
   const { data: sfRows } = await supabase
     .from('salesforce_rows').select('file_code, venta').eq('upload_id', uploadId)
   const sfMap = new Map<string, number>()
-  sfRows?.forEach(r => sfMap.set(r.file_code.toUpperCase(), r.venta ?? 0))
-
-  // Deduplicar por file_code
-  type FileRow = {
-    file_code: string
-    area: string
-    vendedor: string
-    cliente: string
-    departamento: string
-    fecha_in: string
-    fecha_out: string
-    estado: string
-    pax: number
-    costo: number
-    venta: number
-    ganancia: number
-    cm: number
-  }
+  sfRows?.forEach((r: { file_code: string; venta: number | null }) => sfMap.set(r.file_code.toUpperCase(), r.venta ?? 0))
 
   const seen = new Set<string>()
-  const files: FileRow[] = []
-  tlRows?.forEach(r => {
+  const files: {
+    file_code: string; area: string; vendedor: string; cliente: string
+    departamento: string; fecha_in: string; fecha_out: string; estado: string
+    pax: number; costo: number; venta: number; ganancia: number; cm: number
+  }[] = []
+
+  tlRows?.forEach((r: {
+    file_code: string; booking_branch: string | null; vendedor: string | null
+    cliente: string | null; booking_department: string | null; fecha_in: string | null
+    fecha_out: string | null; estado: string | null; cant_pax: number | null
+    costo: number | null; venta: number | null; is_b2c: boolean
+  }) => {
     if (seen.has(r.file_code)) return
     seen.add(r.file_code)
     const sfVenta = r.is_b2c ? sfMap.get(r.file_code.toUpperCase()) : undefined
@@ -104,10 +90,7 @@ export default async function DetalleCMPage({
       fecha_out: r.fecha_out ?? '',
       estado: r.estado ?? '',
       pax: r.cant_pax ?? 0,
-      costo,
-      venta,
-      ganancia,
-      cm,
+      costo, venta, ganancia, cm,
     })
   })
 
@@ -117,7 +100,8 @@ export default async function DetalleCMPage({
       areas={available}
       areaFiltro={areaFiltro}
       temp={temp}
-      rango={rango}
+      rangoMin={rango.cm_min}
+      rangoMax={rango.cm_max}
       isAdmin={isAdmin}
     />
   )

@@ -5,7 +5,7 @@ import { usePathname } from 'next/navigation'
 import {
   LayoutDashboard, CheckSquare, Calendar, TrendingUp,
   FileSearch, Users, Upload, Settings, LogOut,
-  BarChart3, UserCheck
+  BarChart3, UserCheck, Briefcase
 } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { useRouter } from 'next/navigation'
@@ -21,24 +21,24 @@ const navItems = [
   { href: '/contribucion',    label: 'Contrib. MG',     icon: BarChart3 },
 ]
 
-const bottomItems = [
-  { href: '/subir',   label: 'Subir Excel',  icon: Upload },
-  { href: '/admin',   label: 'Admin',        icon: Settings },
-]
-
 interface Props {
-  user: { email: string; name: string; role: string }
+  user: { email: string; name: string; role: string; areas: string[] }
 }
 
 export default function Sidebar({ user }: Props) {
   const pathname = usePathname()
   const router = useRouter()
+  const isAdmin = user.role === 'admin'
 
   async function handleLogout() {
     const supabase = createClient()
     await supabase.auth.signOut()
     router.push('/login')
   }
+
+  const areaLabel = !isAdmin && user.areas.length > 0
+    ? user.areas.join(', ')
+    : null
 
   return (
     <aside style={{
@@ -92,25 +92,36 @@ export default function Sidebar({ user }: Props) {
         <div style={{ fontSize: 10, fontWeight: 600, color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '0.08em', padding: '0 10px 8px' }}>
           Sistema
         </div>
-        {bottomItems.map(item => {
-          const active = pathname === item.href
-          const Icon = item.icon
-          if (item.href === '/admin' && user.role !== 'admin') return null
-          return (
-            <Link key={item.href} href={item.href} style={{
-              display: 'flex', alignItems: 'center', gap: 10,
-              padding: '8px 10px', borderRadius: 8, marginBottom: 2,
-              fontSize: 13, fontWeight: active ? 500 : 400,
-              color: active ? 'var(--teal-400)' : 'var(--text-dim)',
-              background: active ? 'rgba(20, 184, 166, 0.08)' : 'transparent',
-              textDecoration: 'none',
-              transition: 'all 0.15s',
-            }}>
-              <Icon size={16} style={{ opacity: active ? 1 : 0.7 }} />
-              {item.label}
-            </Link>
-          )
-        })}
+
+        {/* Subir Excel — solo admin */}
+        {isAdmin && (
+          <Link href="/subir" style={{
+            display: 'flex', alignItems: 'center', gap: 10,
+            padding: '8px 10px', borderRadius: 8, marginBottom: 2,
+            fontSize: 13, fontWeight: pathname === '/subir' ? 500 : 400,
+            color: pathname === '/subir' ? 'var(--teal-400)' : 'var(--text-dim)',
+            background: pathname === '/subir' ? 'rgba(20, 184, 166, 0.08)' : 'transparent',
+            textDecoration: 'none', transition: 'all 0.15s',
+          }}>
+            <Upload size={16} style={{ opacity: pathname === '/subir' ? 1 : 0.7 }} />
+            Subir Excel
+          </Link>
+        )}
+
+        {/* Admin — solo admin */}
+        {isAdmin && (
+          <Link href="/admin" style={{
+            display: 'flex', alignItems: 'center', gap: 10,
+            padding: '8px 10px', borderRadius: 8, marginBottom: 2,
+            fontSize: 13, fontWeight: pathname === '/admin' ? 500 : 400,
+            color: pathname === '/admin' ? 'var(--teal-400)' : 'var(--text-dim)',
+            background: pathname === '/admin' ? 'rgba(20, 184, 166, 0.08)' : 'transparent',
+            textDecoration: 'none', transition: 'all 0.15s',
+          }}>
+            <Settings size={16} style={{ opacity: pathname === '/admin' ? 1 : 0.7 }} />
+            Admin
+          </Link>
+        )}
       </nav>
 
       {/* User */}
@@ -120,9 +131,12 @@ export default function Sidebar({ user }: Props) {
       }}>
         <div style={{
           width: 30, height: 30, borderRadius: '50%',
-          background: 'var(--teal-900)', border: '1px solid var(--teal-700)',
+          background: isAdmin ? 'var(--teal-900)' : 'rgba(139,92,246,0.15)',
+          border: `1px solid ${isAdmin ? 'var(--teal-700)' : 'rgba(139,92,246,0.4)'}`,
           display: 'flex', alignItems: 'center', justifyContent: 'center',
-          fontSize: 11, fontWeight: 600, color: 'var(--teal-400)', flexShrink: 0,
+          fontSize: 11, fontWeight: 600,
+          color: isAdmin ? 'var(--teal-400)' : '#a78bfa',
+          flexShrink: 0,
         }}>
           {(user.name || user.email).slice(0, 2).toUpperCase()}
         </div>
@@ -130,7 +144,9 @@ export default function Sidebar({ user }: Props) {
           <div style={{ fontSize: 12, fontWeight: 500, color: 'var(--text)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
             {user.name || user.email}
           </div>
-          <div style={{ fontSize: 10, color: 'var(--muted)', textTransform: 'capitalize' }}>{user.role}</div>
+          <div style={{ fontSize: 10, color: 'var(--muted)' }}>
+            {isAdmin ? 'Admin' : areaLabel ?? 'Comercial'}
+          </div>
         </div>
         <button onClick={handleLogout} style={{
           background: 'none', border: 'none', cursor: 'pointer',

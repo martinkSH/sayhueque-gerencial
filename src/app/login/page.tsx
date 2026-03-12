@@ -2,7 +2,6 @@
 
 import { useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
-import { useRouter } from 'next/navigation'
 import { Loader2, Lock, Mail } from 'lucide-react'
 
 export default function LoginPage() {
@@ -10,7 +9,6 @@ export default function LoginPage() {
   const [password, setPassword] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
-  const router = useRouter()
 
   async function handleLogin(e: React.FormEvent) {
     e.preventDefault()
@@ -22,7 +20,9 @@ export default function LoginPage() {
       setError('Email o contraseña incorrectos')
       setLoading(false)
     } else {
-      router.push('/dashboard')
+      // window.location.href hace un full page load, garantizando que el server
+      // lee las cookies nuevas de Supabase antes de renderizar el dashboard
+      window.location.href = '/dashboard'
     }
   }
 
@@ -31,7 +31,6 @@ export default function LoginPage() {
       minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center',
       background: 'var(--bg)', padding: '24px',
     }}>
-      {/* Background subtle grid */}
       <div style={{
         position: 'fixed', inset: 0, opacity: 0.03,
         backgroundImage: 'linear-gradient(var(--border) 1px, transparent 1px), linear-gradient(90deg, var(--border) 1px, transparent 1px)',
@@ -40,7 +39,6 @@ export default function LoginPage() {
       }} />
 
       <div style={{ width: '100%', maxWidth: 380, position: 'relative' }}>
-        {/* Logo */}
         <div style={{ textAlign: 'center', marginBottom: 32 }}>
           <div style={{
             width: 48, height: 48, borderRadius: 12,
@@ -56,7 +54,6 @@ export default function LoginPage() {
           </p>
         </div>
 
-        {/* Form */}
         <div className="card" style={{ padding: 28 }}>
           <form onSubmit={handleLogin} style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
             <div>
@@ -74,7 +71,7 @@ export default function LoginPage() {
                     width: '100%', padding: '10px 12px 10px 36px',
                     background: 'var(--bg)', border: '1px solid var(--border)',
                     borderRadius: 8, color: 'var(--text)', fontSize: 14,
-                    outline: 'none',
+                    outline: 'none', boxSizing: 'border-box',
                   }}
                   placeholder="tu@sayhueque.com"
                 />
@@ -96,7 +93,7 @@ export default function LoginPage() {
                     width: '100%', padding: '10px 12px 10px 36px',
                     background: 'var(--bg)', border: '1px solid var(--border)',
                     borderRadius: 8, color: 'var(--text)', fontSize: 14,
-                    outline: 'none',
+                    outline: 'none', boxSizing: 'border-box',
                   }}
                   placeholder="••••••••"
                 />

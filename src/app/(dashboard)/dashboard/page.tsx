@@ -57,7 +57,7 @@ export default async function DashboardPage({
   // CP1: Confirmados QU→OK últimos 7 días
   let confirmadosQuery = supabase
     .from('v_confirmados_qu_ok')
-    .select('venta, booking_branch')
+    .select('venta, area')
     .eq('upload_id', uploadId)
     .eq('rn', 1)
     .gte('date_of_change', since7days.toISOString())
@@ -65,7 +65,7 @@ export default async function DashboardPage({
   const { data: confirmados } = await confirmadosQuery
 
   const confirmadosFiltrados = p_areas
-    ? (confirmados ?? []).filter(r => p_areas.includes(r.booking_branch ?? ''))
+    ? (confirmados ?? []).filter(r => p_areas.includes(r.area ?? ''))
     : (confirmados ?? [])
 
   const totalConfirmados = confirmadosFiltrados.length

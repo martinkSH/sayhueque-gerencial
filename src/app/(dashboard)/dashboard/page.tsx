@@ -1,17 +1,28 @@
 import { createClient } from '@/lib/supabase/server'
-import { Users, DollarSign, Calendar, CheckCircle2, AlertTriangle, Upload } from 'lucide-react'
+import { Users, DollarSign, Calendar, CheckCircle2, Upload, TrendingUp } from 'lucide-react'
 import Link from 'next/link'
-import { format, subDays } from 'date-fns'
+import { format } from 'date-fns'
 import { es } from 'date-fns/locale'
 
 function formatUSD(n: number) {
   return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 }).format(n)
 }
 
-export default async function DashboardPage() {
-  const supabase = createClient()
+const ESTADOS_CONFIRMADOS = [
+  'Final + Day by Day', 'Confirmed', 'Pre Final',
+  'En Operaciones', 'Cerrado', 'Cierre Operativo'
+]
 
-  // Último upload
+const FIN_TEMPORADA = '2026-04-30'
+
+export default async function DashboardPage({
+  searchParams,
+}: {
+  searchParams: { area?: string }
+}) {
+  const supabase = createClient()
+  const areaDetalle = searchParams.area ?? null
+
   const { data: lastUpload } = await supabase
     .from('uploads')
     .select('id, filename, created_at, row_count, status')
@@ -24,89 +35,110 @@ export default async function DashboardPage() {
     return (
       <div style={{ maxWidth: 600, margin: '80px auto', textAlign: 'center' }}>
         <Upload size={48} style={{ color: 'var(--muted)', marginBottom: 16 }} />
-        <h2 style={{ fontSize: 20, fontWeight: 600, color: 'var(--text)', margin: '0 0 8px' }}>
-          Sin datos todavía
-        </h2>
-        <p style={{ color: 'var(--muted)', fontSize: 14, marginBottom: 24 }}>
-          Subí tu primer Excel para ver el dashboard completo.
-        </p>
+        <h2 style={{ fontSize: 20, fontWeight: 600, color: 'var(--text)', margin: '0 0 8px' }}>Sin datos todavía</h2>
+        <p style={{ color: 'var(--muted)', fontSize: 14, marginBottom: 24 }}>Subí tu primer Excel para ver el dashboard completo.</p>
         <Link href="/subir" className="btn-primary">Subir Excel ahora</Link>
       </div>
     )
   }
 
   const uploadId = lastUpload.id
-  const since7days = subDays(new Date(), 7).toISOString()
+  const since7days = new Date()
+  since7days.setDate(since7days.getDate() - 7)
+  const today = new Date().toISOString().slice(0, 10)
 
   // CP1: Confirmados QU→OK últimos 7 días
   const { data: confirmados } = await supabase
     .from('v_confirmados_qu_ok')
-    .select('area, venta, rn')
+    .select('venta')
     .eq('upload_id', uploadId)
     .eq('rn', 1)
-    .gte('date_of_change', since7days)
+    .gte('date_of_change', since7days.toISOString())
 
   const totalConfirmados = confirmados?.length ?? 0
   const ventaConfirmados = confirmados?.reduce((s, r) => s + (r.venta ?? 0), 0) ?? 0
 
-  // CP2: Foto temporada — futuros
-  const today = new Date().toISOString().slice(0, 10)
-  const { data: futuros } = await supabase
-    .from('v_foto_temporada')
-    .select('file_code, venta_final, ganancia_final, cant_pax')
+  // Team Leader + Salesforce para calcular todo
+  const { data: tlRows } = await supabase
+    .from('team_leader_rows')
+    .select('file_code, booking_branch, fecha_in, fecha_out, cant_pax, venta, ganancia, is_b2c, temporada')
     .eq('upload_id', uploadId)
-    .gt('fecha_in', today)
+    .in('estado', ESTADOS_CONFIRMADOS)
 
-  const uniqueFuturos = new Map<string, { venta: number; ganancia: number; pax: number }>()
-  futuros?.forEach(r => {
-    if (!uniqueFuturos.has(r.file_code)) {
-      uniqueFuturos.set(r.file_code, { venta: r.venta_final ?? 0, ganancia: r.ganancia_final ?? 0, pax: r.cant_pax ?? 0 })
+  const { data: sfRows } = await supabase
+    .from('salesforce_rows')
+    .select('file_code, venta, ganancia')
+    .eq('upload_id', uploadId)
+
+  const sfMap = new Map<string, { venta: number; ganancia: number }>()
+  sfRows?.forEach(r => sfMap.set(r.file_code.toUpperCase(), { venta: r.venta ?? 0, ganancia: r.ganancia ?? 0 }))
+
+  function getVentaGanancia(r: { file_code: string; is_b2c: boolean; venta: number; ganancia: number }) {
+    if (r.is_b2c) {
+      const sf = sfMap.get(r.file_code.toUpperCase())
+      if (sf) return { venta: sf.venta, ganancia: sf.ganancia }
+    }
+    return { venta: r.venta ?? 0, ganancia: r.ganancia ?? 0 }
+  }
+
+  // Viajes futuros hasta fin de temporada (fecha IN > hoy y <= 30/04/2026)
+  const futurosMap = new Map<string, { venta: number; ganancia: number; pax: number; area: string }>()
+  tlRows?.forEach(r => {
+    if (!r.fecha_in) return
+    if (r.fecha_in <= today) return
+    if (r.fecha_in > FIN_TEMPORADA) return
+    if (futurosMap.has(r.file_code)) return
+    const { venta, ganancia } = getVentaGanancia(r)
+    futurosMap.set(r.file_code, { venta, ganancia, pax: r.cant_pax ?? 0, area: r.booking_branch ?? 'Sin área' })
+  })
+  const futuros = Array.from(futurosMap.values())
+  const totalFuturos = futuros.length
+  const ventaFutura = futuros.reduce((s, r) => s + r.venta, 0)
+  const gananciaFutura = futuros.reduce((s, r) => s + r.ganancia, 0)
+  const cmFutura = ventaFutura > 0 ? gananciaFutura / ventaFutura : 0
+
+  // En curso hoy
+  const enCursoMap = new Map<string, { pax: number; area: string }>()
+  tlRows?.forEach(r => {
+    if (!r.fecha_in || !r.fecha_out) return
+    if (r.fecha_in > today || r.fecha_out <= today) return
+    if (!enCursoMap.has(r.file_code)) {
+      enCursoMap.set(r.file_code, { pax: r.cant_pax ?? 0, area: r.booking_branch ?? 'Sin área' })
     }
   })
-  const totalFuturos = uniqueFuturos.size
-  const ventaFutura = Array.from(uniqueFuturos.values()).reduce((s, r) => s + r.venta, 0)
-  const gananciaFutura = Array.from(uniqueFuturos.values()).reduce((s, r) => s + r.ganancia, 0)
+  const enCursoList = Array.from(enCursoMap.values())
+  const totalEnCurso = enCursoList.length
+  const paxEnCurso = enCursoList.reduce((s, r) => s + r.pax, 0)
 
-  // CP2: En curso hoy
-  const { data: enCurso } = await supabase
-    .from('v_foto_temporada')
-    .select('file_code, cant_pax')
-    .eq('upload_id', uploadId)
-    .lte('fecha_in', today)
-    .gt('fecha_out', today)
-
-  const uniqueEnCurso = new Set(enCurso?.map(r => r.file_code) ?? [])
-  const paxEnCurso = enCurso?.reduce((s, r) => s + (r.cant_pax ?? 0), 0) ?? 0
-
-  // Web vs SF: cuántos para revisar
-  const { data: webRevisar } = await supabase
-    .from('v_web_vs_sf')
-    .select('file_tl', { count: 'exact', head: true })
-    .eq('upload_id', uploadId)
-    .eq('cruce_ok', 'REVISAR')
-
-  const paraRevisar = webRevisar?.length ?? 0
-
-  // Temporada: por área
-  const { data: porArea } = await supabase
-    .from('v_foto_temporada')
-    .select('area, venta_final, ganancia_final')
-    .eq('upload_id', uploadId)
-
-  const areaMap = new Map<string, { venta: number; ganancia: number }>()
-  porArea?.forEach(r => {
-    const a = r.area ?? '(sin área)'
-    const cur = areaMap.get(a) ?? { venta: 0, ganancia: 0 }
-    areaMap.set(a, { venta: cur.venta + (r.venta_final ?? 0), ganancia: cur.ganancia + (r.ganancia_final ?? 0) })
+  // Desglose en curso por área
+  const enCursoPorArea = new Map<string, { viajes: number; pax: number }>()
+  enCursoList.forEach(r => {
+    const cur = enCursoPorArea.get(r.area) ?? { viajes: 0, pax: 0 }
+    enCursoPorArea.set(r.area, { viajes: cur.viajes + 1, pax: cur.pax + r.pax })
   })
-  const areasSorted = Array.from(areaMap.entries())
+  const enCursoAreas = Array.from(enCursoPorArea.entries()).sort((a, b) => b[1].viajes - a[1].viajes)
+
+  // Ganancia por área — solo temporada 25/26, con B2C override
+  const areaTotals = new Map<string, { venta: number; ganancia: number }>()
+  const seenFiles = new Set<string>()
+  tlRows?.forEach(r => {
+    if (r.temporada !== '25/26') return
+    if (seenFiles.has(r.file_code)) return
+    seenFiles.add(r.file_code)
+    const area = r.booking_branch ?? 'Sin área'
+    const { venta, ganancia } = getVentaGanancia(r)
+    const cur = areaTotals.get(area) ?? { venta: 0, ganancia: 0 }
+    areaTotals.set(area, { venta: cur.venta + venta, ganancia: cur.ganancia + ganancia })
+  })
+  const areasSorted = Array.from(areaTotals.entries())
     .sort((a, b) => b[1].ganancia - a[1].ganancia)
-    .slice(0, 6)
+    .slice(0, 7)
 
   const uploadDate = format(new Date(lastUpload.created_at), "d 'de' MMMM, HH:mm", { locale: es })
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
+
       {/* Header */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: 12 }}>
         <div>
@@ -120,73 +152,93 @@ export default async function DashboardPage() {
         </Link>
       </div>
 
-      {/* KPI Cards */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 12 }}>
-        {[
-          {
-            label: 'Confirmados (7 días)',
-            value: totalConfirmados,
-            sub: formatUSD(ventaConfirmados),
-            icon: CheckCircle2,
-            color: '#4ade80',
-            href: '/confirmaciones',
-          },
-          {
-            label: 'Viajes futuros',
-            value: totalFuturos,
-            sub: formatUSD(ventaFutura),
-            icon: Calendar,
-            color: 'var(--teal-400)',
-            href: '/temporada',
-          },
-          {
-            label: 'En curso hoy',
-            value: uniqueEnCurso.size,
-            sub: `${paxEnCurso} pax en ruta`,
-            icon: Users,
-            color: '#60a5fa',
-            href: '/temporada',
-          },
-          {
-            label: 'Ganancia futura',
-            value: formatUSD(gananciaFutura),
-            sub: ventaFutura > 0 ? `CM ${(gananciaFutura / ventaFutura * 100).toFixed(1)}%` : '—',
-            icon: DollarSign,
-            color: '#a78bfa',
-            href: '/comparativo',
-          },
-          {
-            label: 'Web vs SF · Revisar',
-            value: paraRevisar,
-            sub: 'archivos con diferencias',
-            icon: AlertTriangle,
-            color: paraRevisar > 0 ? '#fb923c' : '#4ade80',
-            href: '/web-vs-sf',
-          },
-        ].map(card => {
-          const Icon = card.icon
-          return (
-            <Link key={card.label} href={card.href} style={{ textDecoration: 'none' }}>
-              <div className="card card-hover" style={{ padding: '16px 18px' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 10 }}>
-                  <span style={{ fontSize: 12, color: 'var(--muted)', fontWeight: 500 }}>{card.label}</span>
-                  <Icon size={16} style={{ color: card.color, opacity: 0.8 }} />
-                </div>
-                <div style={{ fontSize: 24, fontWeight: 700, color: 'var(--text)', fontFamily: 'var(--font-mono)', lineHeight: 1 }}>
-                  {card.value}
-                </div>
-                <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 4 }}>{card.sub}</div>
+      {/* KPI row */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(210px, 1fr))', gap: 12 }}>
+
+        {/* Confirmados 7d */}
+        <Link href="/confirmaciones" style={{ textDecoration: 'none' }}>
+          <div className="card card-hover" style={{ padding: '16px 18px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 10 }}>
+              <span style={{ fontSize: 12, color: 'var(--muted)', fontWeight: 500 }}>Confirmados (7 días)</span>
+              <CheckCircle2 size={16} style={{ color: '#4ade80', opacity: 0.8 }} />
+            </div>
+            <div style={{ fontSize: 28, fontWeight: 700, color: 'var(--text)', fontFamily: 'var(--font-mono)', lineHeight: 1 }}>{totalConfirmados}</div>
+            <div style={{ fontSize: 12, color: '#4ade80', marginTop: 6, fontFamily: 'var(--font-mono)' }}>{formatUSD(ventaConfirmados)}</div>
+          </div>
+        </Link>
+
+        {/* Viajes futuros hasta fin temp */}
+        <Link href="/temporada" style={{ textDecoration: 'none' }}>
+          <div className="card card-hover" style={{ padding: '16px 18px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 10 }}>
+              <span style={{ fontSize: 12, color: 'var(--muted)', fontWeight: 500 }}>Futuros hasta 30/04</span>
+              <Calendar size={16} style={{ color: 'var(--teal-400)', opacity: 0.8 }} />
+            </div>
+            <div style={{ fontSize: 28, fontWeight: 700, color: 'var(--text)', fontFamily: 'var(--font-mono)', lineHeight: 1 }}>{totalFuturos}</div>
+            <div style={{ marginTop: 6, display: 'flex', flexDirection: 'column', gap: 2 }}>
+              <div style={{ fontSize: 12, color: 'var(--teal-400)', fontFamily: 'var(--font-mono)' }}>V: {formatUSD(ventaFutura)}</div>
+              <div style={{ fontSize: 12, color: '#a78bfa', fontFamily: 'var(--font-mono)' }}>
+                G: {formatUSD(gananciaFutura)} · CM {(cmFutura * 100).toFixed(1)}%
               </div>
-            </Link>
-          )
-        })}
+            </div>
+          </div>
+        </Link>
+
+        {/* En curso */}
+        <a href={areaDetalle ? '/dashboard' : '/dashboard?area=all'} style={{ textDecoration: 'none' }}>
+          <div className="card card-hover" style={{ padding: '16px 18px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 10 }}>
+              <span style={{ fontSize: 12, color: 'var(--muted)', fontWeight: 500 }}>En curso hoy</span>
+              <Users size={16} style={{ color: '#60a5fa', opacity: 0.8 }} />
+            </div>
+            <div style={{ fontSize: 28, fontWeight: 700, color: 'var(--text)', fontFamily: 'var(--font-mono)', lineHeight: 1 }}>{totalEnCurso}</div>
+            <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 6 }}>{paxEnCurso} pax en ruta · click para desglose</div>
+          </div>
+        </a>
+
       </div>
 
-      {/* Ganancia por área */}
+      {/* Desglose en curso por área (si se clickeó) */}
+      {areaDetalle && enCursoAreas.length > 0 && (
+        <div className="card" style={{ overflow: 'hidden' }}>
+          <div style={{ padding: '12px 20px', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+            <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)' }}>En curso — desglose por área</span>
+            <a href="/dashboard" style={{ fontSize: 12, color: 'var(--muted)', textDecoration: 'none' }}>✕ cerrar</a>
+          </div>
+          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+            <thead>
+              <tr style={{ background: 'var(--surface2)' }}>
+                {['Área', 'Viajes', 'Pax'].map(h => (
+                  <th key={h} style={{ padding: '9px 20px', textAlign: h === 'Área' ? 'left' : 'right', color: 'var(--muted)', fontWeight: 500, fontSize: 12 }}>{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {enCursoAreas.map(([area, d], i) => (
+                <tr key={area} style={{ borderTop: '1px solid var(--border)', background: i % 2 === 0 ? 'transparent' : 'rgba(255,255,255,0.01)' }}>
+                  <td style={{ padding: '9px 20px', color: 'var(--text)' }}>{area}</td>
+                  <td style={{ padding: '9px 20px', textAlign: 'right', color: 'var(--text)', fontFamily: 'var(--font-mono)' }}>{d.viajes}</td>
+                  <td style={{ padding: '9px 20px', textAlign: 'right', color: 'var(--muted)', fontFamily: 'var(--font-mono)' }}>{d.pax}</td>
+                </tr>
+              ))}
+              <tr style={{ borderTop: '2px solid var(--border)', background: 'var(--surface2)' }}>
+                <td style={{ padding: '9px 20px', color: 'var(--text)', fontWeight: 700 }}>TOTAL</td>
+                <td style={{ padding: '9px 20px', textAlign: 'right', color: 'var(--text)', fontFamily: 'var(--font-mono)', fontWeight: 700 }}>{totalEnCurso}</td>
+                <td style={{ padding: '9px 20px', textAlign: 'right', color: 'var(--text)', fontFamily: 'var(--font-mono)', fontWeight: 700 }}>{paxEnCurso}</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {/* Ganancia por área — 25/26 */}
       <div className="card" style={{ padding: '20px 24px' }}>
-        <h2 style={{ fontSize: 14, fontWeight: 600, color: 'var(--text)', margin: '0 0 16px' }}>
-          Ganancia por área — temporada completa
-        </h2>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 16 }}>
+          <TrendingUp size={14} style={{ color: 'var(--teal-400)' }} />
+          <h2 style={{ fontSize: 14, fontWeight: 600, color: 'var(--text)', margin: 0 }}>
+            Ganancia por área — temporada 25/26
+          </h2>
+        </div>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
           {areasSorted.map(([area, data]) => {
             const maxGan = areasSorted[0]?.[1].ganancia || 1
@@ -197,20 +249,12 @@ export default async function DashboardPage() {
                 <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
                   <span style={{ fontSize: 13, color: 'var(--text)' }}>{area}</span>
                   <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
-                    <span style={{ fontSize: 11, color: 'var(--muted)', fontFamily: 'var(--font-mono)' }}>
-                      CM {(cm * 100).toFixed(1)}%
-                    </span>
-                    <span style={{ fontSize: 13, fontWeight: 500, color: 'var(--text)', fontFamily: 'var(--font-mono)' }}>
-                      {formatUSD(data.ganancia)}
-                    </span>
+                    <span style={{ fontSize: 11, color: 'var(--muted)', fontFamily: 'var(--font-mono)' }}>CM {(cm * 100).toFixed(1)}%</span>
+                    <span style={{ fontSize: 13, fontWeight: 500, color: 'var(--text)', fontFamily: 'var(--font-mono)' }}>{formatUSD(data.ganancia)}</span>
                   </div>
                 </div>
                 <div style={{ height: 4, background: 'var(--surface2)', borderRadius: 2 }}>
-                  <div style={{
-                    height: '100%', width: `${pct}%`,
-                    background: 'var(--teal-600)', borderRadius: 2,
-                    transition: 'width 0.6s ease',
-                  }} />
+                  <div style={{ height: '100%', width: `${pct}%`, background: 'var(--teal-600)', borderRadius: 2 }} />
                 </div>
               </div>
             )
@@ -221,10 +265,10 @@ export default async function DashboardPage() {
       {/* Quick links */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 10 }}>
         {[
-          { href: '/vendedores',     label: 'Ranking Vendedores',   emoji: '🏆' },
-          { href: '/clientes',       label: 'Análisis Clientes',    emoji: '👥' },
-          { href: '/comparativo',    label: 'Comparativo 24/25',    emoji: '📊' },
-          { href: '/contribucion',   label: 'Contrib. Marginal',    emoji: '📈' },
+          { href: '/vendedores',   label: 'Ranking Vendedores', emoji: '🏆' },
+          { href: '/clientes',     label: 'Análisis Clientes',  emoji: '👥' },
+          { href: '/comparativo',  label: 'Comparativo 24/25',  emoji: '📊' },
+          { href: '/contribucion', label: 'Contrib. Marginal',  emoji: '📈' },
         ].map(item => (
           <Link key={item.href} href={item.href} style={{ textDecoration: 'none' }}>
             <div className="card card-hover" style={{ padding: '14px 16px', display: 'flex', alignItems: 'center', gap: 10 }}>
@@ -234,6 +278,7 @@ export default async function DashboardPage() {
           </Link>
         ))}
       </div>
+
     </div>
   )
 }

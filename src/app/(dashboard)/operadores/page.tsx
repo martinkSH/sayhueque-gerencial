@@ -1,3 +1,4 @@
+import { getUserProfile, expandAreas, B2C_AREAS } from '@/lib/user-context'
 import { createClient } from '@/lib/supabase/server'
 import { Briefcase } from 'lucide-react'
 
@@ -14,7 +15,10 @@ export default async function OperadoresPage({
 }) {
   const supabase = createClient()
   const temp = searchParams.temp ?? '25/26'
-  const areaFiltro = searchParams.area ?? 'todas'
+  const userProfile = await getUserProfile()
+  const isAdmin = userProfile?.role === 'admin'
+  const expandedUserAreas = isAdmin ? null : expandAreas(userProfile?.areas ?? [])
+  const areaFiltroRaw = searchParams.area ?? 'todas'
 
   const { data: lastUpload } = await supabase
     .from('uploads')
@@ -32,7 +36,14 @@ export default async function OperadoresPage({
     .rpc('get_ranking_operadores', { p_upload_id: lastUpload.id, p_temporada: temp })
 
   type ORow = { operador: string; area: string; files: number; dias: number; pax: number; venta: number }
-  const allRanking = (rawRanking ?? []) as ORow[]
+  const rankingPorRol = expandedUserAreas
+    ? (rawRanking ?? []).filter((r: ORow) => {
+        if (r.area === 'B2C') return expandedUserAreas.some(a => ['Web','Plataformas','Walk In'].includes(a))
+        return expandedUserAreas.includes(r.area)
+      })
+    : (rawRanking ?? [])
+  const areaFiltro = areaFiltroRaw
+  const allRanking = rankingPorRol as ORow[]
 
   // Áreas disponibles
   const areasSet = new Set(allRanking.map(r => r.area))

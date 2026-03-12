@@ -66,6 +66,7 @@ export default async function DashboardPage({
     .in('estado', ESTADOS_CONFIRMADOS)
     .gt('fecha_in', today)
     .lte('fecha_in', FIN_TEMPORADA)
+    .limit(10000)
 
   // SF para B2C override
   const { data: sfRows } = await supabase
@@ -101,6 +102,7 @@ export default async function DashboardPage({
     .in('estado', ESTADOS_CONFIRMADOS)
     .lte('fecha_in', today)
     .gt('fecha_out', today)
+    .limit(10000)
 
   const enCursoMap = new Map<string, { pax: number; area: string }>()
   enCursoRaw?.forEach(r => {
@@ -126,6 +128,7 @@ export default async function DashboardPage({
     .eq('upload_id', uploadId)
     .eq('temporada', '25/26')
     .in('estado', ESTADOS_CONFIRMADOS)
+    .limit(10000)
 
   const areaTotals = new Map<string, { venta: number; ganancia: number }>()
   const seenFiles = new Set<string>()

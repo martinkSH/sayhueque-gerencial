@@ -3,6 +3,7 @@ import { Users, Calendar, CheckCircle2, Upload, TrendingUp } from 'lucide-react'
 import Link from 'next/link'
 import { format } from 'date-fns'
 import { es } from 'date-fns/locale'
+import { getUserProfile, expandAreas, B2C_AREAS } from '@/lib/user-context'
 
 function formatUSD(n: number) {
   return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 }).format(n)
@@ -12,7 +13,6 @@ const ESTADOS_CONFIRMADOS = [
   'Final + Day by Day', 'Confirmed', 'Pre Final',
   'En Operaciones', 'Cerrado', 'Cierre Operativo'
 ]
-
 const FIN_TEMPORADA = '2026-04-30'
 
 export default async function DashboardPage({
@@ -21,8 +21,15 @@ export default async function DashboardPage({
   searchParams: { area?: string }
 }) {
   const supabase = createClient()
+  const userProfile = await getUserProfile()
+  const isAdmin = userProfile?.role === 'admin'
   const areaDetalle = searchParams.area ?? null
   const today = new Date().toISOString().slice(0, 10)
+
+  // Áreas del usuario comercial (null = todas = admin)
+  const p_areas: string[] | null = isAdmin
+    ? null
+    : expandAreas(userProfile?.areas ?? [])
 
   const { data: lastUpload } = await supabase
     .from('uploads')
@@ -37,8 +44,8 @@ export default async function DashboardPage({
       <div style={{ maxWidth: 600, margin: '80px auto', textAlign: 'center' }}>
         <Upload size={48} style={{ color: 'var(--muted)', marginBottom: 16 }} />
         <h2 style={{ fontSize: 20, fontWeight: 600, color: 'var(--text)', margin: '0 0 8px' }}>Sin datos todavía</h2>
-        <p style={{ color: 'var(--muted)', fontSize: 14, marginBottom: 24 }}>Subí tu primer Excel para ver el dashboard completo.</p>
-        <Link href="/subir" className="btn-primary">Subir Excel ahora</Link>
+        <p style={{ color: 'var(--muted)', fontSize: 14, marginBottom: 24 }}>Subí tu primer Excel para ver el dashboard.</p>
+        {isAdmin && <Link href="/subir" className="btn-primary">Subir Excel ahora</Link>}
       </div>
     )
   }
@@ -48,22 +55,29 @@ export default async function DashboardPage({
   since7days.setDate(since7days.getDate() - 7)
 
   // CP1: Confirmados QU→OK últimos 7 días
-  const { data: confirmados } = await supabase
+  let confirmadosQuery = supabase
     .from('v_confirmados_qu_ok')
-    .select('venta')
+    .select('venta, booking_branch')
     .eq('upload_id', uploadId)
     .eq('rn', 1)
     .gte('date_of_change', since7days.toISOString())
 
-  const totalConfirmados = confirmados?.length ?? 0
-  const ventaConfirmados = confirmados?.reduce((s, r) => s + (r.venta ?? 0), 0) ?? 0
+  const { data: confirmados } = await confirmadosQuery
 
-  // Futuros hasta 30/04 — via RPC
+  const confirmadosFiltrados = p_areas
+    ? (confirmados ?? []).filter(r => p_areas.includes(r.booking_branch ?? ''))
+    : (confirmados ?? [])
+
+  const totalConfirmados = confirmadosFiltrados.length
+  const ventaConfirmados = confirmadosFiltrados.reduce((s, r) => s + (r.venta ?? 0), 0)
+
+  // Futuros via RPC
   const { data: futurosKpiRaw } = await supabase
     .rpc('get_futuros_kpi', {
       p_upload_id: uploadId,
       p_today: today,
       p_fin: FIN_TEMPORADA,
+      p_areas: p_areas,
     })
     .single()
 
@@ -73,8 +87,8 @@ export default async function DashboardPage({
   const gananciaFutura = futurosKpi?.ganancia ?? 0
   const cmFutura = ventaFutura > 0 ? gananciaFutura / ventaFutura : 0
 
-  // En curso hoy — filtrado en Supabase
-  const { data: enCursoRaw } = await supabase
+  // En curso hoy
+  let enCursoQuery = supabase
     .from('team_leader_rows')
     .select('file_code, booking_branch, cant_pax')
     .eq('upload_id', uploadId)
@@ -82,6 +96,10 @@ export default async function DashboardPage({
     .lte('fecha_in', today)
     .gt('fecha_out', today)
     .limit(10000)
+
+  if (p_areas) enCursoQuery = enCursoQuery.in('booking_branch', p_areas)
+
+  const { data: enCursoRaw } = await enCursoQuery
 
   const enCursoMap = new Map<string, { pax: number; area: string }>()
   enCursoRaw?.forEach(r => {
@@ -94,16 +112,39 @@ export default async function DashboardPage({
 
   const enCursoPorArea = new Map<string, { viajes: number; pax: number }>()
   enCursoList.forEach(r => {
-    const cur = enCursoPorArea.get(r.area) ?? { viajes: 0, pax: 0 }
-    enCursoPorArea.set(r.area, { viajes: cur.viajes + 1, pax: cur.pax + r.pax })
+    const area = B2C_AREAS.includes(r.area) ? 'B2C' : r.area
+    const cur = enCursoPorArea.get(area) ?? { viajes: 0, pax: 0 }
+    enCursoPorArea.set(area, { viajes: cur.viajes + 1, pax: cur.pax + r.pax })
   })
   const enCursoAreas = Array.from(enCursoPorArea.entries()).sort((a, b) => b[1].viajes - a[1].viajes)
 
-  // Ganancia por área 25/26 — via RPC
-  const { data: gananciaPorArea } = await supabase
-    .rpc('get_ganancia_por_area', { p_upload_id: uploadId })
+  // Ganancia por área 25/26 via RPC
+  const { data: gananciaPorAreaRaw } = await supabase
+    .rpc('get_ganancia_por_area', { p_upload_id: uploadId, p_areas: p_areas })
 
-  const areasSorted = (gananciaPorArea ?? []) as { area: string; venta: number; ganancia: number }[]
+  type AreaRow = { area: string; venta: number; ganancia: number }
+  const allAreas = (gananciaPorAreaRaw ?? []) as AreaRow[]
+
+  // Agrupar B2C
+  const b2c = { venta: 0, ganancia: 0 }
+  const otros: AreaRow[] = []
+  allAreas.forEach(row => {
+    if (B2C_AREAS.includes(row.area)) {
+      b2c.venta += row.venta
+      b2c.ganancia += row.ganancia
+    } else {
+      otros.push(row)
+    }
+  })
+  // Solo mostrar B2C agrupado si hay datos b2c
+  const areasSorted: AreaRow[] = [
+    ...(b2c.venta > 0 || b2c.ganancia !== 0 ? [{ area: 'B2C (Web + Plataformas + Walk In)', ...b2c }] : []),
+    ...otros,
+  ].sort((a, b) => b.ganancia - a.ganancia)
+
+  const totalVenta = areasSorted.reduce((s, r) => s + r.venta, 0)
+  const totalGanancia = areasSorted.reduce((s, r) => s + r.ganancia, 0)
+  const totalCM = totalVenta > 0 ? totalGanancia / totalVenta : 0
 
   const uploadDate = format(new Date(lastUpload.created_at), "d 'de' MMMM, HH:mm", { locale: es })
 
@@ -116,16 +157,22 @@ export default async function DashboardPage({
           <h1 style={{ fontSize: 22, fontWeight: 600, color: 'var(--text)', margin: 0 }}>Dashboard</h1>
           <p style={{ color: 'var(--muted)', fontSize: 13, marginTop: 4 }}>
             Último update: {uploadDate} · {lastUpload.filename}
+            {!isAdmin && p_areas && (
+              <span style={{ marginLeft: 8, color: 'var(--teal-400)' }}>
+                · {userProfile?.areas.join(', ')}
+              </span>
+            )}
           </p>
         </div>
-        <Link href="/subir" className="btn-ghost">
-          <Upload size={14} /> Actualizar datos
-        </Link>
+        {isAdmin && (
+          <Link href="/subir" className="btn-ghost">
+            <Upload size={14} /> Actualizar datos
+          </Link>
+        )}
       </div>
 
-      {/* KPI row */}
+      {/* KPIs */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(210px, 1fr))', gap: 12 }}>
-
         <Link href="/confirmaciones" style={{ textDecoration: 'none' }}>
           <div className="card card-hover" style={{ padding: '16px 18px' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 10 }}>
@@ -161,7 +208,6 @@ export default async function DashboardPage({
             <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 6 }}>{paxEnCurso} pax en ruta · click para desglose</div>
           </div>
         </a>
-
       </div>
 
       {/* Desglose en curso */}
@@ -197,73 +243,53 @@ export default async function DashboardPage({
         </div>
       )}
 
-      {/* Ganancia por área 25/26 */}
+      {/* Ganancia por área */}
       <div className="card" style={{ padding: '20px 24px' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 16 }}>
           <TrendingUp size={14} style={{ color: 'var(--teal-400)' }} />
           <h2 style={{ fontSize: 14, fontWeight: 600, color: 'var(--text)', margin: 0 }}>Ganancia por área — temporada 25/26</h2>
         </div>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-          {(() => {
-            // Agrupar B2C (Web + Plataformas + Walk In)
-            const b2cAreas = ['Web', 'Plataformas', 'Walk In']
-            const b2c = { venta: 0, ganancia: 0 }
-            const otros: typeof areasSorted = []
-            areasSorted.forEach(row => {
-              if (b2cAreas.includes(row.area)) {
-                b2c.venta += row.venta
-                b2c.ganancia += row.ganancia
-              } else {
-                otros.push(row)
-              }
-            })
-            const rows = [{ area: 'B2C (Web + Plataformas + Walk In)', ...b2c }, ...otros]
-            const maxGan = Math.max(...rows.map(r => r.ganancia), 1)
-            const totalVenta = rows.reduce((s, r) => s + r.venta, 0)
-            const totalGanancia = rows.reduce((s, r) => s + r.ganancia, 0)
-            const totalCM = totalVenta > 0 ? totalGanancia / totalVenta : 0
-
+          {areasSorted.map(row => {
+            const maxGan = Math.max(...areasSorted.map(r => r.ganancia), 1)
+            const pct = Math.max(0, (row.ganancia / maxGan) * 100)
+            const cm = row.venta > 0 ? row.ganancia / row.venta : 0
+            const isB2C = row.area.startsWith('B2C')
             return (
-              <>
-                {rows.map(row => {
-                  const pct = Math.max(0, (row.ganancia / maxGan) * 100)
-                  const cm = row.venta > 0 ? row.ganancia / row.venta : 0
-                  return (
-                    <div key={row.area}>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
-                        <span style={{ fontSize: 13, color: row.area.startsWith('B2C') ? 'var(--teal-400)' : 'var(--text)', fontWeight: row.area.startsWith('B2C') ? 600 : 400 }}>{row.area}</span>
-                        <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
-                          <span style={{ fontSize: 11, color: 'var(--muted)', fontFamily: 'var(--font-mono)' }}>CM {(cm * 100).toFixed(1)}%</span>
-                          <span style={{ fontSize: 13, fontWeight: 500, color: row.ganancia < 0 ? '#f87171' : 'var(--text)', fontFamily: 'var(--font-mono)' }}>{formatUSD(row.ganancia)}</span>
-                        </div>
-                      </div>
-                      <div style={{ height: 4, background: 'var(--surface2)', borderRadius: 2 }}>
-                        <div style={{ height: '100%', width: `${pct}%`, background: row.area.startsWith('B2C') ? 'var(--teal-500)' : 'var(--teal-700)', borderRadius: 2 }} />
-                      </div>
-                    </div>
-                  )
-                })}
-                {/* Total empresa */}
-                <div style={{ marginTop: 8, paddingTop: 12, borderTop: '2px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--text)' }}>TOTAL EMPRESA</span>
-                  <div style={{ display: 'flex', gap: 20, alignItems: 'center' }}>
-                    <div style={{ textAlign: 'right' }}>
-                      <div style={{ fontSize: 10, color: 'var(--muted)' }}>Venta</div>
-                      <div style={{ fontSize: 13, fontFamily: 'var(--font-mono)', color: 'var(--text)' }}>{formatUSD(totalVenta)}</div>
-                    </div>
-                    <div style={{ textAlign: 'right' }}>
-                      <div style={{ fontSize: 10, color: 'var(--muted)' }}>Ganancia</div>
-                      <div style={{ fontSize: 13, fontFamily: 'var(--font-mono)', fontWeight: 700, color: '#4ade80' }}>{formatUSD(totalGanancia)}</div>
-                    </div>
-                    <div style={{ textAlign: 'right' }}>
-                      <div style={{ fontSize: 10, color: 'var(--muted)' }}>CM</div>
-                      <div style={{ fontSize: 13, fontFamily: 'var(--font-mono)', fontWeight: 700, color: 'var(--teal-400)' }}>{(totalCM * 100).toFixed(1)}%</div>
-                    </div>
+              <div key={row.area}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
+                  <span style={{ fontSize: 13, color: isB2C ? 'var(--teal-400)' : 'var(--text)', fontWeight: isB2C ? 600 : 400 }}>{row.area}</span>
+                  <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
+                    <span style={{ fontSize: 11, color: 'var(--muted)', fontFamily: 'var(--font-mono)' }}>CM {(cm * 100).toFixed(1)}%</span>
+                    <span style={{ fontSize: 13, fontWeight: 500, color: row.ganancia < 0 ? '#f87171' : 'var(--text)', fontFamily: 'var(--font-mono)' }}>{formatUSD(row.ganancia)}</span>
                   </div>
                 </div>
-              </>
+                <div style={{ height: 4, background: 'var(--surface2)', borderRadius: 2 }}>
+                  <div style={{ height: '100%', width: `${pct}%`, background: isB2C ? 'var(--teal-500)' : 'var(--teal-700)', borderRadius: 2 }} />
+                </div>
+              </div>
             )
-          })()}
+          })}
+          {/* Total empresa */}
+          <div style={{ marginTop: 8, paddingTop: 12, borderTop: '2px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--text)' }}>
+              {isAdmin ? 'TOTAL EMPRESA' : 'TOTAL'}
+            </span>
+            <div style={{ display: 'flex', gap: 20, alignItems: 'center' }}>
+              <div style={{ textAlign: 'right' }}>
+                <div style={{ fontSize: 10, color: 'var(--muted)' }}>Venta</div>
+                <div style={{ fontSize: 13, fontFamily: 'var(--font-mono)', color: 'var(--text)' }}>{formatUSD(totalVenta)}</div>
+              </div>
+              <div style={{ textAlign: 'right' }}>
+                <div style={{ fontSize: 10, color: 'var(--muted)' }}>Ganancia</div>
+                <div style={{ fontSize: 13, fontFamily: 'var(--font-mono)', fontWeight: 700, color: '#4ade80' }}>{formatUSD(totalGanancia)}</div>
+              </div>
+              <div style={{ textAlign: 'right' }}>
+                <div style={{ fontSize: 10, color: 'var(--muted)' }}>CM</div>
+                <div style={{ fontSize: 13, fontFamily: 'var(--font-mono)', fontWeight: 700, color: 'var(--teal-400)' }}>{(totalCM * 100).toFixed(1)}%</div>
+              </div>
+            </div>
+          </div>
         </div>
       </div>
 

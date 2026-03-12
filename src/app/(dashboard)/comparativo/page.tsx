@@ -10,13 +10,7 @@ function pct(a: number, b: number) {
 }
 
 const MESES = ['May','Jun','Jul','Ago','Sep','Oct','Nov','Dic','Ene','Feb','Mar','Abr']
-const ESTADOS_CONFIRMADOS = [
-  'Final + Day by Day','Confirmed','Pre Final','En Operaciones','Cerrado','Cierre Operativo'
-]
 const B2C_AREAS = ['Web','Plataformas','Walk In']
-
-// Columnas Temp 2425: Ganancia cols D..O = índices 3..14 (0-based), área en col A (idx 0)
-// Mismo para Venta y Cantidad (cantidad cols C..N = idx 2..13)
 
 export default async function ComparativoPage({
   searchParams,
@@ -53,9 +47,7 @@ export default async function ComparativoPage({
     .select('*')
     .eq('upload_id', uploadId)
 
-  
-  // mes_01=May, mes_02=Jun ... mes_12=Abr
-  // Construir mapa area -> [12 valores]
+  // area -> [12 valores] (mes_01=May ... mes_12=Abr)
   const temp2425: Map<string, number[]> = new Map()
   tempRows?.forEach((row: Record<string, unknown>) => {
     const area = (row.area as string) ?? ''
@@ -67,89 +59,54 @@ export default async function ComparativoPage({
     temp2425.set(area, vals)
   })
 
-  // Áreas disponibles en 24/25
-  const areas2425 = Array.from(temp2425.keys()).filter(Boolean)
-
-  // ── 25/26 desde team_leader_rows ─────────────────────────────────────────
-  const { data: tlRows } = await supabase
-    .from('team_leader_rows')
-    .select('file_code, booking_branch, fecha_in, venta, ganancia, cant_pax, is_b2c')
-    .eq('upload_id', uploadId)
-    .eq('temporada', '25/26')
-    .in('estado', ESTADOS_CONFIRMADOS)
-    .limit(10000)
-
-  const { data: sfRows } = await supabase
-    .from('salesforce_rows')
-    .select('file_code, venta, ganancia')
-    .eq('upload_id', uploadId)
-  const sfMap = new Map<string, { venta: number; ganancia: number }>()
-  sfRows?.forEach(r => sfMap.set(r.file_code.toUpperCase(), { venta: r.venta ?? 0, ganancia: r.ganancia ?? 0 }))
-
-  // Mes de temporada: May=0 ... Abr=11
-  // fecha_in formato YYYY-MM-DD
-  function mesIdx(fechaIn: string): number {
-    const m = parseInt(fechaIn.slice(5, 7), 10) // 1-12
-    // May(5)=0 .. Dic(12)=7, Ene(1)=8, Feb(2)=9, Mar(3)=10, Abr(4)=11
-    return m >= 5 ? m - 5 : m + 7
+  // ── 25/26 via RPC ────────────────────────────────────────────────────────
+  // Determinar p_areas
+  let p_areas: string[] | null = null
+  if (areaFiltro === 'B2C') {
+    p_areas = B2C_AREAS
+  } else if (areaFiltro !== 'empresa') {
+    p_areas = [areaFiltro]
   }
 
-  // area -> [12]
-  const temp2526: Map<string, number[]> = new Map()
-  const seenFiles = new Set<string>()
+  const { data: rpcRows } = await supabase
+    .rpc('get_comparativo_2526', {
+      p_upload_id: uploadId,
+      p_metric: metric,
+      p_areas: p_areas,
+    })
 
-  tlRows?.forEach(r => {
-    if (!r.fecha_in) return
-    if (seenFiles.has(r.file_code)) return
-    seenFiles.add(r.file_code)
-
-    const sf = r.is_b2c ? sfMap.get(r.file_code.toUpperCase()) : null
-    const val = metric === 'cantidad'
-      ? 1
-      : metric === 'venta'
-      ? (sf ? sf.venta : (r.venta ?? 0))
-      : (sf ? sf.ganancia : (r.ganancia ?? 0))
-
-    const rawArea = r.booking_branch ?? ''
-    const area = B2C_AREAS.includes(rawArea) ? 'B2C' : rawArea
-    const idx = mesIdx(r.fecha_in)
-
-    const cur = temp2526.get(area) ?? Array(12).fill(0)
-    cur[idx] += val
-    temp2526.set(area, cur)
+  type RpcRow = { mes_idx: number; valor: number }
+  const rows2526 = Array(12).fill(0)
+  ;(rpcRows as RpcRow[] ?? []).forEach(r => {
+    const idx = r.mes_idx - 1 // 1-based → 0-based
+    if (idx >= 0 && idx < 12) rows2526[idx] = r.valor
   })
 
-  // Construir lista de áreas para el selector
-  const areas2526 = Array.from(temp2526.keys()).filter(Boolean).sort()
-  const allAreas = Array.from(new Set([...areas2425, ...areas2526, 'B2C'])).sort()
-  const areaOptions = ['empresa', ...allAreas]
-
-  // Totales empresa 24/25 y 25/26
-  function sumAreas(map: Map<string, number[]>): number[] {
+  // ── 24/25 según filtro ───────────────────────────────────────────────────
+  function sumAreas(map: Map<string, number[]>, areas: string[] | null): number[] {
     const total = Array(12).fill(0)
-    map.forEach(vals => vals.forEach((v, i) => { total[i] += v }))
+    if (areas === null) {
+      map.forEach(vals => vals.forEach((v, i) => { total[i] += v }))
+    } else {
+      areas.forEach(a => {
+        const v = map.get(a)
+        if (v) v.forEach((x, i) => { total[i] += x })
+      })
+    }
     return total
   }
 
-  // Filas a mostrar según filtro
-  let rows2425: number[]
-  let rows2526: number[]
-
-  if (areaFiltro === 'empresa') {
-    rows2425 = sumAreas(temp2425)
-    rows2526 = sumAreas(temp2526)
-  } else if (areaFiltro === 'B2C') {
-    // B2C en 24/25: sumar Web + Plataformas + Walk In si existen
-    rows2425 = Array(12).fill(0)
-    B2C_AREAS.forEach(a => {
-      const v = temp2425.get(a)
-      if (v) v.forEach((x, i) => { rows2425[i] += x })
-    })
-    rows2526 = temp2526.get('B2C') ?? Array(12).fill(0)
-  } else {
-    rows2425 = temp2425.get(areaFiltro) ?? Array(12).fill(0)
-    rows2526 = temp2526.get(areaFiltro) ?? Array(12).fill(0)
+  let areas2425: string[] | null = null
+  if (areaFiltro === 'B2C') {
+    areas2425 = B2C_AREAS
+  } else if (areaFiltro !== 'empresa') {
+    areas2425 = [areaFiltro]
   }
+  const rows2425 = sumAreas(temp2425, areas2425)
+
+  // Opciones de área para el selector
+  const allAreas2425 = Array.from(temp2425.keys()).filter(Boolean)
+  const areaOptions = ['empresa', 'B2C', ...allAreas2425.filter(a => !B2C_AREAS.includes(a)).sort()]
 
   const total2425 = rows2425.reduce((s, v) => s + v, 0)
   const total2526 = rows2526.reduce((s, v) => s + v, 0)
@@ -157,7 +114,6 @@ export default async function ComparativoPage({
 
   const metricLabel = metric === 'ganancia' ? 'Ganancia' : metric === 'venta' ? 'Venta' : 'Cantidad'
   const isMoney = metric !== 'cantidad'
-
   const fmt = (v: number) => isMoney ? formatUSD(v) : v.toLocaleString('es-AR', { maximumFractionDigits: 0 })
 
   return (
@@ -167,9 +123,10 @@ export default async function ComparativoPage({
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: 12 }}>
         <div>
           <h1 style={{ fontSize: 22, fontWeight: 600, color: 'var(--text)', margin: 0 }}>Comparativo 24/25 vs 25/26</h1>
-          <p style={{ color: 'var(--muted)', fontSize: 13, marginTop: 4 }}>{areaFiltro === 'empresa' ? 'Total empresa' : areaFiltro} · {metricLabel}</p>
+          <p style={{ color: 'var(--muted)', fontSize: 13, marginTop: 4 }}>
+            {areaFiltro === 'empresa' ? 'Total empresa' : areaFiltro} · {metricLabel}
+          </p>
         </div>
-        {/* Métrica */}
         <div style={{ display: 'flex', gap: 6 }}>
           {(['ganancia','venta','cantidad'] as const).map(m => (
             <a key={m} href={`?metric=${m}&area=${areaFiltro}`} style={{
@@ -245,7 +202,6 @@ export default async function ComparativoPage({
                   </tr>
                 )
               })}
-              {/* Total */}
               <tr style={{ borderTop: '2px solid var(--border)', background: 'var(--surface2)' }}>
                 <td style={{ padding: '10px 16px', color: 'var(--text)', fontWeight: 700 }}>TOTAL</td>
                 <td style={{ padding: '10px 16px', textAlign: 'right', color: 'var(--muted)', fontFamily: 'var(--font-mono)', fontWeight: 700 }}>{fmt(total2425)}</td>

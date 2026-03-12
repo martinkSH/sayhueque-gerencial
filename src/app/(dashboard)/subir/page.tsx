@@ -152,7 +152,7 @@ export default function SubirPage() {
 
       {/* Progress indicator */}
       {uploading && (
-        <div style={{ marginTop: 16, card: true } as React.CSSProperties} className="card">
+        <div style={{ marginTop: 16 }} className="card">
           <div style={{ padding: '16px 20px' }}>
             <div style={{ fontSize: 13, color: 'var(--muted)', marginBottom: 12 }}>Procesando…</div>
             {['Leyendo Reporte Team Leader', 'Procesando Bookings Audit', 'Cargando SF B2C', 'Actualizando métricas'].map((step, i) => (

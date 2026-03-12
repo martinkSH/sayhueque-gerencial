@@ -1,26 +1,11 @@
 import { createClient } from '@/lib/supabase/server'
-import { TrendingUp, TrendingDown, Users, DollarSign, Calendar, CheckCircle2, AlertTriangle, Upload } from 'lucide-react'
+import { Users, DollarSign, Calendar, CheckCircle2, AlertTriangle, Upload } from 'lucide-react'
 import Link from 'next/link'
 import { format, subDays } from 'date-fns'
 import { es } from 'date-fns/locale'
 
 function formatUSD(n: number) {
   return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 }).format(n)
-}
-
-function PctBadge({ pct }: { pct: number }) {
-  const positive = pct >= 0
-  const Icon = positive ? TrendingUp : TrendingDown
-  return (
-    <span style={{
-      display: 'inline-flex', alignItems: 'center', gap: 3,
-      fontSize: 12, fontWeight: 500,
-      color: positive ? '#4ade80' : '#f87171',
-    }}>
-      <Icon size={12} />
-      {positive ? '+' : ''}{(pct * 100).toFixed(1)}%
-    </span>
-  )
 }
 
 export default async function DashboardPage() {

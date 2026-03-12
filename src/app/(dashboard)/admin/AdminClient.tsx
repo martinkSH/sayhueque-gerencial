@@ -115,11 +115,9 @@ export default function AdminClient({ users: initialUsers, currentUserId }: {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
 
-      {/* Header */}
+
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 12 }}>
         <div>
-          <h1 style={{ fontSize: 22, fontWeight: 600, color: 'var(--text)', margin: 0 }}>Administración</h1>
-          <p style={{ color: 'var(--muted)', fontSize: 13, marginTop: 4 }}>Gestión de usuarios y permisos</p>
         </div>
         <button onClick={() => { setShowCreate(true); setMsg(null) }} style={{
           display: 'flex', alignItems: 'center', gap: 8,

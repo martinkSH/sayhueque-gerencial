@@ -204,7 +204,7 @@ export default function SubirPage() {
           )}
 
           {result.error && (
-            <div style={{ fontSize: 13, color: '#fca5a5', marginTop: 4, fontFamily: 'var(--font-mono)', fontSize: 12 }}>
+            <div style={{ fontSize: 12, color: '#fca5a5', marginTop: 4, fontFamily: 'var(--font-mono)' }}>
               {result.error}
             </div>
           )}

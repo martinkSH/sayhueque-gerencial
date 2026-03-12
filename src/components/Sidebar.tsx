@@ -15,7 +15,7 @@ const navItems = [
   { href: '/confirmaciones',  label: 'Confirmaciones',  icon: CheckSquare },
   { href: '/temporada',       label: 'Temporada',       icon: Calendar },
   { href: '/comparativo',     label: 'Comparativo',     icon: TrendingUp },
-  { href: '/web-vs-sf',       label: 'Web vs SF',       icon: FileSearch },
+  { href: '/operadores',      label: 'Operadores',      icon: FileSearch },
   { href: '/vendedores',      label: 'Vendedores',      icon: UserCheck },
   { href: '/clientes',        label: 'Clientes',        icon: Users },
   { href: '/contribucion',    label: 'Contrib. MG',     icon: BarChart3 },

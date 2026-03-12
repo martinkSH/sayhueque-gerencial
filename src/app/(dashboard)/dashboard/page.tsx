@@ -58,40 +58,18 @@ export default async function DashboardPage({
   const totalConfirmados = confirmados?.length ?? 0
   const ventaConfirmados = confirmados?.reduce((s, r) => s + (r.venta ?? 0), 0) ?? 0
 
-  // Viajes futuros hasta 30/04/2026 — filtrado en Supabase
-  const { data: futurosRaw } = await supabase
-    .from('team_leader_rows')
-    .select('file_code, booking_branch, venta, ganancia, cant_pax, is_b2c')
-    .eq('upload_id', uploadId)
-    .in('estado', ESTADOS_CONFIRMADOS)
-    .gt('fecha_in', today)
-    .lte('fecha_in', FIN_TEMPORADA)
-    .limit(10000)
-
-  // SF para B2C override
-  const { data: sfRows } = await supabase
-    .from('salesforce_rows')
-    .select('file_code, venta, ganancia')
-    .eq('upload_id', uploadId)
-
-  const sfMap = new Map<string, { venta: number; ganancia: number }>()
-  sfRows?.forEach(r => sfMap.set(r.file_code.toUpperCase(), { venta: r.venta ?? 0, ganancia: r.ganancia ?? 0 }))
-
-  // Deduplicar por file_code y aplicar B2C override
-  const futurosMap = new Map<string, { venta: number; ganancia: number; pax: number }>()
-  futurosRaw?.forEach(r => {
-    if (futurosMap.has(r.file_code)) return
-    const sf = r.is_b2c ? sfMap.get(r.file_code.toUpperCase()) : null
-    futurosMap.set(r.file_code, {
-      venta: sf ? sf.venta : (r.venta ?? 0),
-      ganancia: sf ? sf.ganancia : (r.ganancia ?? 0),
-      pax: r.cant_pax ?? 0,
+  // Futuros hasta 30/04 — via RPC
+  const { data: futurosKpi } = await supabase
+    .rpc('get_futuros_kpi', {
+      p_upload_id: uploadId,
+      p_today: today,
+      p_fin: FIN_TEMPORADA,
     })
-  })
-  const futuros = Array.from(futurosMap.values())
-  const totalFuturos = futuros.length
-  const ventaFutura = futuros.reduce((s, r) => s + r.venta, 0)
-  const gananciaFutura = futuros.reduce((s, r) => s + r.ganancia, 0)
+    .single()
+
+  const totalFuturos = futurosKpi?.viajes ?? 0
+  const ventaFutura = futurosKpi?.venta ?? 0
+  const gananciaFutura = futurosKpi?.ganancia ?? 0
   const cmFutura = ventaFutura > 0 ? gananciaFutura / ventaFutura : 0
 
   // En curso hoy — filtrado en Supabase
@@ -106,9 +84,8 @@ export default async function DashboardPage({
 
   const enCursoMap = new Map<string, { pax: number; area: string }>()
   enCursoRaw?.forEach(r => {
-    if (!enCursoMap.has(r.file_code)) {
+    if (!enCursoMap.has(r.file_code))
       enCursoMap.set(r.file_code, { pax: r.cant_pax ?? 0, area: r.booking_branch ?? 'Sin área' })
-    }
   })
   const enCursoList = Array.from(enCursoMap.values())
   const totalEnCurso = enCursoList.length
@@ -121,29 +98,11 @@ export default async function DashboardPage({
   })
   const enCursoAreas = Array.from(enCursoPorArea.entries()).sort((a, b) => b[1].viajes - a[1].viajes)
 
-  // Ganancia por área — temporada 25/26, filtrado en Supabase
-  const { data: temp2526 } = await supabase
-    .from('team_leader_rows')
-    .select('file_code, booking_branch, venta, ganancia, is_b2c')
-    .eq('upload_id', uploadId)
-    .eq('temporada', '25/26')
-    .in('estado', ESTADOS_CONFIRMADOS)
-    .limit(10000)
+  // Ganancia por área 25/26 — via RPC
+  const { data: gananciaPorArea } = await supabase
+    .rpc('get_ganancia_por_area', { p_upload_id: uploadId })
 
-  const areaTotals = new Map<string, { venta: number; ganancia: number }>()
-  const seenFiles = new Set<string>()
-  temp2526?.forEach(r => {
-    if (seenFiles.has(r.file_code)) return
-    seenFiles.add(r.file_code)
-    const area = r.booking_branch ?? 'Sin área'
-    const sf = r.is_b2c ? sfMap.get(r.file_code.toUpperCase()) : null
-    const venta = sf ? sf.venta : (r.venta ?? 0)
-    const ganancia = sf ? sf.ganancia : (r.ganancia ?? 0)
-    const cur = areaTotals.get(area) ?? { venta: 0, ganancia: 0 }
-    areaTotals.set(area, { venta: cur.venta + venta, ganancia: cur.ganancia + ganancia })
-  })
-  const areasSorted = Array.from(areaTotals.entries())
-    .sort((a, b) => b[1].ganancia - a[1].ganancia)
+  const areasSorted = (gananciaPorArea ?? []) as { area: string; venta: number; ganancia: number }[]
 
   const uploadDate = format(new Date(lastUpload.created_at), "d 'de' MMMM, HH:mm", { locale: es })
 
@@ -244,17 +203,17 @@ export default async function DashboardPage({
           <h2 style={{ fontSize: 14, fontWeight: 600, color: 'var(--text)', margin: 0 }}>Ganancia por área — temporada 25/26</h2>
         </div>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-          {areasSorted.map(([area, data]) => {
-            const maxGan = areasSorted[0]?.[1].ganancia || 1
-            const pct = Math.max(0, (data.ganancia / maxGan) * 100)
-            const cm = data.venta > 0 ? data.ganancia / data.venta : 0
+          {areasSorted.map((row, idx) => {
+            const maxGan = areasSorted[0]?.ganancia || 1
+            const pct = Math.max(0, (row.ganancia / maxGan) * 100)
+            const cm = row.venta > 0 ? row.ganancia / row.venta : 0
             return (
-              <div key={area}>
+              <div key={row.area}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
-                  <span style={{ fontSize: 13, color: 'var(--text)' }}>{area}</span>
+                  <span style={{ fontSize: 13, color: 'var(--text)' }}>{row.area}</span>
                   <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
                     <span style={{ fontSize: 11, color: 'var(--muted)', fontFamily: 'var(--font-mono)' }}>CM {(cm * 100).toFixed(1)}%</span>
-                    <span style={{ fontSize: 13, fontWeight: 500, color: data.ganancia < 0 ? '#f87171' : 'var(--text)', fontFamily: 'var(--font-mono)' }}>{formatUSD(data.ganancia)}</span>
+                    <span style={{ fontSize: 13, fontWeight: 500, color: row.ganancia < 0 ? '#f87171' : 'var(--text)', fontFamily: 'var(--font-mono)' }}>{formatUSD(row.ganancia)}</span>
                   </div>
                 </div>
                 <div style={{ height: 4, background: 'var(--surface2)', borderRadius: 2 }}>

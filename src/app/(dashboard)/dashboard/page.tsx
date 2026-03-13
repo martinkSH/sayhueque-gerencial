@@ -4,6 +4,7 @@ import { Calendar, CheckCircle2, TrendingUp, Upload, Users } from 'lucide-react'
 import Link from 'next/link'
 import { format } from 'date-fns'
 import { es } from 'date-fns/locale'
+import ExportLetiButton from '@/components/ExportLetiButton'
 
 export const dynamic = 'force-dynamic'
 
@@ -167,9 +168,12 @@ export default async function DashboardPage({
           </p>
         </div>
         {isAdmin && (
-          <Link href="/subir" className="btn-ghost">
-            <Upload size={14} /> Actualizar datos
-          </Link>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <ExportLetiButton temp="25/26" />
+            <Link href="/subir" className="btn-ghost">
+              <Upload size={14} /> Actualizar datos
+            </Link>
+          </div>
         )}
       </div>
 

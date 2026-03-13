@@ -1,6 +1,7 @@
-import { getUserProfile, expandAreas, B2C_AREAS } from '@/lib/user-context'
 import { createClient } from '@/lib/supabase/server'
-import { Briefcase } from 'lucide-react'
+import { getUserProfile, expandAreas } from '@/lib/user-context'
+
+export const dynamic = 'force-dynamic'
 
 function formatUSD(n: number) {
   return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 }).format(n)

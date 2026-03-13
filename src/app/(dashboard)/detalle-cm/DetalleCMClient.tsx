@@ -15,7 +15,7 @@ type FileRow = {
   file_code: string; area: string; vendedor: string; cliente: string
   departamento: string; fecha_in: string; fecha_out: string; estado: string
   pax: number; costo: number; venta: number; ganancia: number; cm: number
-  ganancia_sf: number | null; venta_sf: number | null; sin_sf: boolean
+  ganancia_sf: number | null; venta_sf: number | null; costo_sf: number | null; sin_sf: boolean
 }
 
 
@@ -49,6 +49,7 @@ const COLS: { key: SortKey; label: string; align: 'left' | 'right' }[] = [
   { key: 'vendedor',     label: 'Vendedor',    align: 'left' },
   { key: 'pax',          label: 'Pax',         align: 'right' },
   { key: 'costo',        label: 'Costo',       align: 'right' },
+  { key: 'costo_sf',     label: 'Costo SF',    align: 'right' },
   { key: 'venta',        label: 'Venta',       align: 'right' },
   { key: 'venta_sf',     label: 'Venta TP',    align: 'right' },
   { key: 'ganancia',     label: 'Ganancia',    align: 'right' },
@@ -95,6 +96,7 @@ export default function DetalleCMClient({
   const totalVenta = sorted.reduce((s, r) => s + r.venta, 0)
   const totalVentaSf = sorted.filter(r => r.venta_sf !== null).reduce((s, r) => s + (r.venta_sf ?? 0), 0)
   const totalCosto = sorted.reduce((s, r) => s + r.costo, 0)
+  const totalCostoSf = sorted.filter(r => r.costo_sf !== null).reduce((s, r) => s + (r.costo_sf ?? 0), 0)
   const totalGanancia = sorted.reduce((s, r) => s + r.ganancia, 0)
   const totalGananciaSf = sorted.filter(r => r.ganancia_sf !== null).reduce((s, r) => s + (r.ganancia_sf ?? 0), 0)
   const hasSfData = sorted.some(r => r.ganancia_sf !== null)
@@ -237,6 +239,21 @@ export default function DetalleCMClient({
                 <td style={{ padding: '9px 14px', textAlign: 'right', fontFamily: 'var(--font-mono)', fontWeight: 700, fontSize: 12, color: 'var(--muted)' }}>
                   {formatUSD(totalCosto)}
                 </td>
+                <td style={{ padding: '9px 14px', textAlign: 'right' }}>
+                  {hasSfData ? (
+                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 1 }}>
+                      <span style={{ fontFamily: 'var(--font-mono)', fontWeight: 700, fontSize: 12, color: '#60a5fa' }}>{formatUSD(totalCostoSf)}</span>
+                      {totalCosto > 0 && (
+                        <span style={{ fontSize: 10, fontFamily: 'var(--font-mono)', fontWeight: 600,
+                          color: Math.abs(((totalCostoSf - totalCosto) / totalCosto) * 100) < 5 ? 'var(--muted)' :
+                            totalCostoSf > totalCosto ? '#f87171' : '#4ade80' }}>
+                          {((totalCostoSf - totalCosto) / totalCosto) >= 0 ? '+' : ''}
+                          {(((totalCostoSf - totalCosto) / totalCosto) * 100).toFixed(1)}%
+                        </span>
+                      )}
+                    </div>
+                  ) : <span style={{ color: 'var(--muted)', fontSize: 11 }}>—</span>}
+                </td>
                 <td style={{ padding: '9px 14px', textAlign: 'right', fontFamily: 'var(--font-mono)', fontWeight: 700, fontSize: 12, color: 'var(--text)' }}>
                   {formatUSD(totalVenta)}
                 </td>
@@ -309,6 +326,24 @@ export default function DetalleCMClient({
                     <td style={{ padding: '8px 14px', color: 'var(--muted)', whiteSpace: 'nowrap' }}>{r.vendedor}</td>
                     <td style={{ padding: '8px 14px', textAlign: 'right', color: 'var(--muted)', fontFamily: 'var(--font-mono)' }}>{r.pax}</td>
                     <td style={{ padding: '8px 14px', textAlign: 'right', color: 'var(--muted)', fontFamily: 'var(--font-mono)', whiteSpace: 'nowrap' }}>{formatUSD(r.costo)}</td>
+                    <td style={{ padding: '8px 14px', textAlign: 'right', whiteSpace: 'nowrap' }}>
+                      {r.costo_sf !== null ? (
+                        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 1 }}>
+                          <span style={{ fontFamily: 'var(--font-mono)', fontSize: 12, color: '#60a5fa' }}>
+                            {formatUSD(r.costo_sf)}
+                          </span>
+                          {r.costo > 0 && (() => {
+                            const diff = ((r.costo_sf - r.costo) / r.costo) * 100
+                            return (
+                              <span style={{ fontSize: 10, fontFamily: 'var(--font-mono)', fontWeight: 600,
+                                color: Math.abs(diff) < 5 ? 'var(--muted)' : diff > 0 ? '#f87171' : '#4ade80' }}>
+                                {diff >= 0 ? '+' : ''}{diff.toFixed(1)}%
+                              </span>
+                            )
+                          })()}
+                        </div>
+                      ) : <span style={{ fontSize: 11, color: 'var(--muted)' }}>—</span>}
+                    </td>
                     <td style={{ padding: '8px 14px', textAlign: 'right', color: 'var(--text)', fontFamily: 'var(--font-mono)', whiteSpace: 'nowrap' }}>
                       {formatUSD(r.venta)}
                       {r.sin_sf && (
@@ -380,6 +415,21 @@ export default function DetalleCMClient({
                     TOTAL ({sorted.length} files)
                   </td>
                   <td style={{ padding: '9px 14px', textAlign: 'right', fontFamily: 'var(--font-mono)', fontWeight: 700, color: 'var(--muted)', fontSize: 12 }}>{formatUSD(totalCosto)}</td>
+                  <td style={{ padding: '9px 14px', textAlign: 'right', fontSize: 12 }}>
+                    {hasSfData ? (
+                      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 1 }}>
+                        <span style={{ fontFamily: 'var(--font-mono)', fontWeight: 700, color: '#60a5fa' }}>{formatUSD(totalCostoSf)}</span>
+                        {totalCosto > 0 && (
+                          <span style={{ fontSize: 10, fontFamily: 'var(--font-mono)', fontWeight: 600,
+                            color: Math.abs(((totalCostoSf - totalCosto) / totalCosto) * 100) < 5 ? 'var(--muted)' :
+                              totalCostoSf > totalCosto ? '#f87171' : '#4ade80' }}>
+                            {((totalCostoSf - totalCosto) / totalCosto) >= 0 ? '+' : ''}
+                            {(((totalCostoSf - totalCosto) / totalCosto) * 100).toFixed(1)}%
+                          </span>
+                        )}
+                      </div>
+                    ) : <span style={{ color: 'var(--muted)', fontSize: 11 }}>—</span>}
+                  </td>
                   <td style={{ padding: '9px 14px', textAlign: 'right', fontFamily: 'var(--font-mono)', fontWeight: 700, color: 'var(--text)', fontSize: 12 }}>{formatUSD(totalVenta)}</td>
                   <td style={{ padding: '9px 14px', textAlign: 'right', fontFamily: 'var(--font-mono)', fontWeight: 700, color: '#4ade80', fontSize: 12 }}>{formatUSD(totalGanancia)}</td>
                   <td style={{ padding: '9px 14px', textAlign: 'right', fontSize: 12 }}>

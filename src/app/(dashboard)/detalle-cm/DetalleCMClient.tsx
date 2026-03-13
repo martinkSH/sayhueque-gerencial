@@ -50,7 +50,7 @@ const COLS: { key: SortKey; label: string; align: 'left' | 'right' }[] = [
   { key: 'pax',          label: 'Pax',         align: 'right' },
   { key: 'costo',        label: 'Costo',       align: 'right' },
   { key: 'venta',        label: 'Venta',       align: 'right' },
-  { key: 'venta_sf',     label: 'Venta SF',    align: 'right' },
+  { key: 'venta_sf',     label: 'Venta TP',    align: 'right' },
   { key: 'ganancia',     label: 'Ganancia',    align: 'right' },
   { key: 'ganancia_sf',  label: 'Gan. SF',     align: 'right' },
   { key: 'cm',           label: 'CM %',        align: 'right' },

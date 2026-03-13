@@ -1,6 +1,7 @@
 import { createClient } from '@/lib/supabase/server'
 import { getUserProfile } from '@/lib/user-context'
 import { CheckCircle2, TrendingUp } from 'lucide-react'
+import { format } from 'date-fns'
 
 export const dynamic = 'force-dynamic'
 

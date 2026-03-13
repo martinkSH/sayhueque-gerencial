@@ -1,7 +1,6 @@
 import { createClient } from '@/lib/supabase/server'
 import { getUserProfile, expandAreas } from '@/lib/user-context'
 import { Briefcase } from 'lucide-react'
-import { format } from 'date-fns'
 
 export const dynamic = 'force-dynamic'
 
@@ -11,32 +10,40 @@ function formatUSD(n: number) {
 
 const TEMPORADAS = ['25/26', '24/25', '23/24', '26/27']
 
+const PERIODOS = [
+  { value: 'todos',     label: 'Todos' },
+  { value: 'con_out',   label: 'Con OUT' },
+  { value: 'en_curso',  label: 'En curso' },
+  { value: 'por_venir', label: 'Por venir' },
+]
+
 export default async function OperadoresPage({
   searchParams,
 }: {
-  searchParams: { temp?: string; area?: string }
+  searchParams: { temp?: string; area?: string; periodo?: string }
 }) {
   const supabase = createClient()
   const temp = searchParams.temp ?? '25/26'
+  const areaFiltro = searchParams.area ?? 'todas'
+  const periodo = searchParams.periodo ?? 'todos'
   const userProfile = await getUserProfile()
   const isAdmin = userProfile?.role === 'admin'
   const expandedUserAreas = isAdmin ? null : expandAreas(userProfile?.areas ?? [])
-  const areaFiltroRaw = searchParams.area ?? 'todas'
 
   const { data: lastUpload } = await supabase
-    .from('uploads')
-    .select('id, filename')
-    .eq('status', 'ok')
-    .order('created_at', { ascending: false })
-    .limit(1)
-    .single()
+    .from('uploads').select('id, filename').eq('status', 'ok')
+    .order('created_at', { ascending: false }).limit(1).single()
 
   if (!lastUpload) {
     return <div style={{ textAlign: 'center', marginTop: 80, color: 'var(--muted)' }}>Sin datos. Subí un Excel primero.</div>
   }
 
   const { data: rawRanking } = await supabase
-    .rpc('get_ranking_operadores', { p_upload_id: lastUpload.id, p_temporada: temp })
+    .rpc('get_ranking_operadores', {
+      p_upload_id: lastUpload.id,
+      p_temporada: temp,
+      p_periodo: periodo === 'todos' ? null : periodo,
+    })
 
   type ORow = { operador: string; area: string; files: number; dias: number; pax: number; venta: number }
   const rankingPorRol = expandedUserAreas
@@ -45,22 +52,26 @@ export default async function OperadoresPage({
         return expandedUserAreas.includes(r.area)
       })
     : (rawRanking ?? [])
-  const areaFiltro = areaFiltroRaw
-  const allRanking = rankingPorRol as ORow[]
 
-  // Áreas disponibles
+  const allRanking = rankingPorRol as ORow[]
   const areasSet = new Set(allRanking.map(r => r.area))
   const areaOptions = ['todas', 'B2C', ...Array.from(areasSet).filter(a => a !== 'B2C').sort()]
 
-  // Filtrar
   const ranking = areaFiltro === 'todas'
     ? allRanking
     : allRanking.filter(r => r.area === areaFiltro)
 
-  const totalFiles = ranking.reduce((s, r) => s + r.files, 0)
-  const totalDias = ranking.reduce((s, r) => s + r.dias, 0)
-  const totalPax = ranking.reduce((s, r) => s + r.pax, 0)
-  const totalVenta = ranking.reduce((s, r) => s + r.venta, 0)
+  const totalFiles  = ranking.reduce((s, r) => s + r.files, 0)
+  const totalDias   = ranking.reduce((s, r) => s + r.dias, 0)
+  const totalPax    = ranking.reduce((s, r) => s + r.pax, 0)
+  const totalVenta  = ranking.reduce((s, r) => s + r.venta, 0)
+
+  const periodoLabel = PERIODOS.find(p => p.value === periodo)?.label ?? 'Todos'
+
+  function buildHref(overrides: Record<string, string>) {
+    const p = { temp, area: areaFiltro, periodo, ...overrides }
+    return `?temp=${p.temp}&area=${encodeURIComponent(p.area)}&periodo=${p.periodo}`
+  }
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
@@ -70,12 +81,12 @@ export default async function OperadoresPage({
         <div>
           <h1 style={{ fontSize: 22, fontWeight: 600, color: 'var(--text)', margin: 0 }}>Ranking Operadores</h1>
           <p style={{ color: 'var(--muted)', fontSize: 13, marginTop: 4 }}>
-            Temporada {temp} · estados confirmados · {lastUpload.filename}
+            Temporada {temp} · {periodoLabel.toLowerCase()} · {lastUpload.filename}
           </p>
         </div>
         <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
           {TEMPORADAS.map(t => (
-            <a key={t} href={`?temp=${t}&area=${areaFiltro}`} style={{
+            <a key={t} href={buildHref({ temp: t })} style={{
               padding: '5px 14px', borderRadius: 8, fontSize: 13, textDecoration: 'none',
               background: temp === t ? 'var(--teal-600)' : 'var(--surface2)',
               color: temp === t ? '#fff' : 'var(--muted)',
@@ -85,16 +96,34 @@ export default async function OperadoresPage({
         </div>
       </div>
 
-      {/* Filtro área */}
-      <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-        {areaOptions.map(a => (
-          <a key={a} href={`?temp=${temp}&area=${encodeURIComponent(a)}`} style={{
-            padding: '5px 14px', borderRadius: 8, fontSize: 13, textDecoration: 'none',
-            background: areaFiltro === a ? 'var(--surface2)' : 'transparent',
-            color: areaFiltro === a ? 'var(--text)' : 'var(--muted)',
-            border: `1px solid ${areaFiltro === a ? 'var(--teal-600)' : 'var(--border)'}`,
-          }}>{a === 'todas' ? 'Todas las áreas' : a}</a>
-        ))}
+      {/* Filtros */}
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+
+        {/* Filtro área */}
+        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+          {areaOptions.map(a => (
+            <a key={a} href={buildHref({ area: a })} style={{
+              padding: '5px 14px', borderRadius: 8, fontSize: 13, textDecoration: 'none',
+              background: areaFiltro === a ? 'var(--surface2)' : 'transparent',
+              color: areaFiltro === a ? 'var(--text)' : 'var(--muted)',
+              border: `1px solid ${areaFiltro === a ? 'var(--teal-600)' : 'var(--border)'}`,
+            }}>{a === 'todas' ? 'Todas las áreas' : a}</a>
+          ))}
+        </div>
+
+        {/* Filtro periodo */}
+        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
+          <span style={{ fontSize: 12, color: 'var(--muted)', marginRight: 2 }}>Files:</span>
+          {PERIODOS.map(p => (
+            <a key={p.value} href={buildHref({ periodo: p.value })} style={{
+              padding: '4px 12px', borderRadius: 8, fontSize: 12, textDecoration: 'none',
+              background: periodo === p.value ? 'rgba(20,184,166,0.15)' : 'transparent',
+              color: periodo === p.value ? 'var(--teal-400)' : 'var(--muted)',
+              border: `1px solid ${periodo === p.value ? 'var(--teal-600)' : 'var(--border)'}`,
+              fontWeight: periodo === p.value ? 600 : 400,
+            }}>{p.label}</a>
+          ))}
+        </div>
       </div>
 
       {/* Tabla */}
@@ -102,7 +131,7 @@ export default async function OperadoresPage({
         <div style={{ padding: '14px 20px', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', gap: 8 }}>
           <Briefcase size={15} style={{ color: 'var(--teal-400)' }} />
           <span style={{ fontSize: 14, fontWeight: 600, color: 'var(--text)' }}>
-            {ranking.length} operadores · {areaFiltro === 'todas' ? 'todas las áreas' : areaFiltro} · {temp}
+            {ranking.length} operadores · {areaFiltro === 'todas' ? 'todas las áreas' : areaFiltro} · {periodoLabel}
           </span>
         </div>
         <div style={{ overflowX: 'auto' }}>

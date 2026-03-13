@@ -1,5 +1,6 @@
 import { createClient } from '@/lib/supabase/server'
 import { getUserProfile, expandAreas, B2C_AREAS } from '@/lib/user-context'
+import { BarChart2 } from 'lucide-react'
 
 export const dynamic = 'force-dynamic'
 

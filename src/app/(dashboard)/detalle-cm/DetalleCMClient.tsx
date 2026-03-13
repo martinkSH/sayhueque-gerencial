@@ -15,7 +15,7 @@ type FileRow = {
   file_code: string; area: string; vendedor: string; cliente: string
   departamento: string; fecha_in: string; fecha_out: string; estado: string
   pax: number; costo: number; venta: number; ganancia: number; cm: number
-  sin_sf: boolean
+  ganancia_sf: number | null; sin_sf: boolean
 }
 
 
@@ -51,6 +51,7 @@ const COLS: { key: SortKey; label: string; align: 'left' | 'right' }[] = [
   { key: 'costo',        label: 'Costo',       align: 'right' },
   { key: 'venta',        label: 'Venta',       align: 'right' },
   { key: 'ganancia',     label: 'Ganancia',    align: 'right' },
+  { key: 'ganancia_sf',  label: 'Gan. SF',     align: 'right' },
   { key: 'cm',           label: 'CM %',        align: 'right' },
 ]
 
@@ -92,6 +93,8 @@ export default function DetalleCMClient({
   const totalVenta = sorted.reduce((s, r) => s + r.venta, 0)
   const totalCosto = sorted.reduce((s, r) => s + r.costo, 0)
   const totalGanancia = sorted.reduce((s, r) => s + r.ganancia, 0)
+  const totalGananciaSf = sorted.filter(r => r.ganancia_sf !== null).reduce((s, r) => s + (r.ganancia_sf ?? 0), 0)
+  const hasSfData = sorted.some(r => r.ganancia_sf !== null)
   const totalCM = totalVenta > 0 ? totalGanancia / totalVenta : 0
 
   // Conteo por categoría
@@ -255,6 +258,27 @@ export default function DetalleCMClient({
                     <td style={{ padding: '8px 14px', textAlign: 'right', fontFamily: 'var(--font-mono)', whiteSpace: 'nowrap',
                       color: r.ganancia < 0 ? '#f87171' : 'var(--text)' }}>{formatUSD(r.ganancia)}</td>
                     <td style={{ padding: '8px 14px', textAlign: 'right', whiteSpace: 'nowrap' }}>
+                      {r.ganancia_sf !== null ? (
+                        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 1 }}>
+                          <span style={{ fontFamily: 'var(--font-mono)', fontSize: 12, color: r.ganancia_sf < 0 ? '#f87171' : '#60a5fa' }}>
+                            {formatUSD(r.ganancia_sf)}
+                          </span>
+                          {(() => {
+                            const diff = r.ganancia > 0 ? ((r.ganancia_sf - r.ganancia) / r.ganancia) * 100 : null
+                            if (diff === null) return null
+                            return (
+                              <span style={{ fontSize: 10, fontFamily: 'var(--font-mono)', fontWeight: 600,
+                                color: Math.abs(diff) < 5 ? 'var(--muted)' : diff > 0 ? '#4ade80' : '#f87171' }}>
+                                {diff >= 0 ? '+' : ''}{diff.toFixed(1)}%
+                              </span>
+                            )
+                          })()}
+                        </div>
+                      ) : (
+                        <span style={{ fontSize: 11, color: 'var(--muted)' }}>—</span>
+                      )}
+                    </td>
+                    <td style={{ padding: '8px 14px', textAlign: 'right', whiteSpace: 'nowrap' }}>
                       <span style={{
                         display: 'inline-block', padding: '3px 8px', borderRadius: 6,
                         fontSize: 12, fontWeight: 700, fontFamily: 'var(--font-mono)',
@@ -276,6 +300,21 @@ export default function DetalleCMClient({
                   <td style={{ padding: '9px 14px', textAlign: 'right', fontFamily: 'var(--font-mono)', fontWeight: 700, color: 'var(--muted)', fontSize: 12 }}>{formatUSD(totalCosto)}</td>
                   <td style={{ padding: '9px 14px', textAlign: 'right', fontFamily: 'var(--font-mono)', fontWeight: 700, color: 'var(--text)', fontSize: 12 }}>{formatUSD(totalVenta)}</td>
                   <td style={{ padding: '9px 14px', textAlign: 'right', fontFamily: 'var(--font-mono)', fontWeight: 700, color: '#4ade80', fontSize: 12 }}>{formatUSD(totalGanancia)}</td>
+                  <td style={{ padding: '9px 14px', textAlign: 'right', fontSize: 12 }}>
+                    {hasSfData ? (
+                      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 1 }}>
+                        <span style={{ fontFamily: 'var(--font-mono)', fontWeight: 700, color: '#60a5fa' }}>{formatUSD(totalGananciaSf)}</span>
+                        {totalGanancia > 0 && (
+                          <span style={{ fontSize: 10, fontFamily: 'var(--font-mono)', fontWeight: 600,
+                            color: Math.abs(((totalGananciaSf - totalGanancia) / totalGanancia) * 100) < 5 ? 'var(--muted)' :
+                              totalGananciaSf > totalGanancia ? '#4ade80' : '#f87171' }}>
+                            {((totalGananciaSf - totalGanancia) / totalGanancia) >= 0 ? '+' : ''}
+                            {(((totalGananciaSf - totalGanancia) / totalGanancia) * 100).toFixed(1)}%
+                          </span>
+                        )}
+                      </div>
+                    ) : <span style={{ color: 'var(--muted)' }}>—</span>}
+                  </td>
                   <td style={{ padding: '9px 14px', textAlign: 'right' }}>
                     <span style={{
                       display: 'inline-block', padding: '3px 8px', borderRadius: 6,

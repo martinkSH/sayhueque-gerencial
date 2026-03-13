@@ -5,6 +5,13 @@ import ExcelJS from 'exceljs'
 
 export const dynamic = 'force-dynamic'
 
+type LetiRow = {
+  area: string; mes_out: string;
+  total_venta: number; iva_venta: number; venta_neta: number;
+  total_costo: number; iva_costo: number; costo_neto: number;
+  cm_usd: number; cm_pct: number;
+}
+
 const MESES = ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic']
 const AREAS_ORDER = ['Web','Plataformas','Walk In','Aliwen','DMC FITS','Grupos DMC','Booknow']
 
@@ -39,7 +46,7 @@ export async function GET(req: Request) {
   }
 
   // Group by area
-  const byArea = new Map<string, typeof rows>()
+  const byArea = new Map<string, LetiRow[]>()
   for (const r of rows) {
     if (!byArea.has(r.area)) byArea.set(r.area, [])
     byArea.get(r.area)!.push(r)

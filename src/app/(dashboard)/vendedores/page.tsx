@@ -1,7 +1,6 @@
 import { createClient } from '@/lib/supabase/server'
 import { getUserProfile, expandAreas } from '@/lib/user-context'
 import { TrendingUp } from 'lucide-react'
-import { format } from 'date-fns'
 
 export const dynamic = 'force-dynamic'
 
@@ -11,16 +10,25 @@ function formatUSD(n: number) {
 
 const TEMPORADAS = ['25/26', '24/25', '23/24', '26/27']
 
+const PERIODOS = [
+  { value: 'todos',     label: 'Todos' },
+  { value: 'con_out',   label: 'Con OUT' },
+  { value: 'en_curso',  label: 'En curso' },
+  { value: 'por_venir', label: 'Por venir' },
+]
+
 export default async function VendedoresPage({
   searchParams,
 }: {
-  searchParams: { temp?: string; area?: string }
+  searchParams: { temp?: string; area?: string; periodo?: string }
 }) {
   const supabase = createClient()
   const userProfile = await getUserProfile()
   const isAdmin = userProfile?.role === 'admin'
   const userAreas = userProfile?.areas ?? []
   const temp = searchParams.temp ?? '25/26'
+  const areaFiltro = searchParams.area ?? 'todas'
+  const periodo = searchParams.periodo ?? 'todos'
 
   const { data: lastUpload } = await supabase
     .from('uploads').select('id, filename').eq('status', 'ok')
@@ -29,12 +37,15 @@ export default async function VendedoresPage({
   if (!lastUpload) return <div style={{ textAlign: 'center', marginTop: 80, color: 'var(--muted)' }}>Sin datos.</div>
 
   const { data: rawRanking } = await supabase
-    .rpc('get_ranking_vendedores', { p_upload_id: lastUpload.id, p_temporada: temp })
+    .rpc('get_ranking_vendedores', {
+      p_upload_id: lastUpload.id,
+      p_temporada: temp,
+      p_periodo: periodo === 'todos' ? null : periodo,
+    })
 
   type VRow = { vendedor: string; area: string; viajes: number; pax: number; venta: number; ganancia: number }
   const allRanking = (rawRanking ?? []) as VRow[]
 
-  // Para comercial: filtrar solo sus áreas
   const expandedUserAreas = isAdmin ? null : expandAreas(userAreas)
   const rankingPorRol = expandedUserAreas
     ? allRanking.filter(r => {
@@ -43,30 +54,38 @@ export default async function VendedoresPage({
       })
     : allRanking
 
-  // Áreas disponibles para filtro (solo las del usuario)
   const areasSet = new Set(rankingPorRol.map(r => r.area))
   const areaOptions = ['todas', ...Array.from(areasSet).sort()]
-  const areaFiltro = searchParams.area ?? 'todas'
 
   const ranking = areaFiltro === 'todas'
     ? rankingPorRol
     : rankingPorRol.filter(r => r.area === areaFiltro)
 
-  const totalVenta = ranking.reduce((s, r) => s + r.venta, 0)
+  const totalVenta    = ranking.reduce((s, r) => s + r.venta, 0)
   const totalGanancia = ranking.reduce((s, r) => s + r.ganancia, 0)
-  const totalViajes = ranking.reduce((s, r) => s + r.viajes, 0)
-  const totalCM = totalVenta > 0 ? totalGanancia / totalVenta : 0
+  const totalViajes   = ranking.reduce((s, r) => s + r.viajes, 0)
+  const totalCM       = totalVenta > 0 ? totalGanancia / totalVenta : 0
+  const periodoLabel  = PERIODOS.find(p => p.value === periodo)?.label ?? 'Todos'
+
+  function buildHref(overrides: Record<string, string>) {
+    const p = { temp, area: areaFiltro, periodo, ...overrides }
+    return `?temp=${p.temp}&area=${encodeURIComponent(p.area)}&periodo=${p.periodo}`
+  }
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
+
+      {/* Header */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: 12 }}>
         <div>
           <h1 style={{ fontSize: 22, fontWeight: 600, color: 'var(--text)', margin: 0 }}>Ranking Vendedores</h1>
-          <p style={{ color: 'var(--muted)', fontSize: 13, marginTop: 4 }}>Temporada {temp} · {lastUpload.filename}</p>
+          <p style={{ color: 'var(--muted)', fontSize: 13, marginTop: 4 }}>
+            Temporada {temp} · {periodoLabel.toLowerCase()} · {lastUpload.filename}
+          </p>
         </div>
         <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
           {TEMPORADAS.map(t => (
-            <a key={t} href={`?temp=${t}&area=${areaFiltro}`} style={{
+            <a key={t} href={buildHref({ temp: t })} style={{
               padding: '5px 14px', borderRadius: 8, fontSize: 13, textDecoration: 'none',
               background: temp === t ? 'var(--teal-600)' : 'var(--surface2)',
               color: temp === t ? '#fff' : 'var(--muted)',
@@ -76,22 +95,42 @@ export default async function VendedoresPage({
         </div>
       </div>
 
-      <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-        {areaOptions.map(a => (
-          <a key={a} href={`?temp=${temp}&area=${encodeURIComponent(a)}`} style={{
-            padding: '5px 14px', borderRadius: 8, fontSize: 13, textDecoration: 'none',
-            background: areaFiltro === a ? 'var(--surface2)' : 'transparent',
-            color: areaFiltro === a ? 'var(--text)' : 'var(--muted)',
-            border: `1px solid ${areaFiltro === a ? 'var(--teal-600)' : 'var(--border)'}`,
-          }}>{a === 'todas' ? 'Todas las áreas' : a}</a>
-        ))}
+      {/* Filtros */}
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+
+        {/* Filtro área */}
+        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+          {areaOptions.map(a => (
+            <a key={a} href={buildHref({ area: a })} style={{
+              padding: '5px 14px', borderRadius: 8, fontSize: 13, textDecoration: 'none',
+              background: areaFiltro === a ? 'var(--surface2)' : 'transparent',
+              color: areaFiltro === a ? 'var(--text)' : 'var(--muted)',
+              border: `1px solid ${areaFiltro === a ? 'var(--teal-600)' : 'var(--border)'}`,
+            }}>{a === 'todas' ? 'Todas las áreas' : a}</a>
+          ))}
+        </div>
+
+        {/* Filtro periodo */}
+        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
+          <span style={{ fontSize: 12, color: 'var(--muted)', marginRight: 2 }}>Files:</span>
+          {PERIODOS.map(p => (
+            <a key={p.value} href={buildHref({ periodo: p.value })} style={{
+              padding: '4px 12px', borderRadius: 8, fontSize: 12, textDecoration: 'none',
+              background: periodo === p.value ? 'rgba(20,184,166,0.15)' : 'transparent',
+              color: periodo === p.value ? 'var(--teal-400)' : 'var(--muted)',
+              border: `1px solid ${periodo === p.value ? 'var(--teal-600)' : 'var(--border)'}`,
+              fontWeight: periodo === p.value ? 600 : 400,
+            }}>{p.label}</a>
+          ))}
+        </div>
       </div>
 
+      {/* Tabla */}
       <div className="card" style={{ overflow: 'hidden' }}>
         <div style={{ padding: '14px 20px', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', gap: 8 }}>
           <TrendingUp size={15} style={{ color: 'var(--teal-400)' }} />
           <span style={{ fontSize: 14, fontWeight: 600, color: 'var(--text)' }}>
-            {ranking.length} vendedores · {areaFiltro === 'todas' ? 'todas las áreas' : areaFiltro} · {temp}
+            {ranking.length} vendedores · {areaFiltro === 'todas' ? 'todas las áreas' : areaFiltro} · {periodoLabel}
           </span>
         </div>
         <div style={{ overflowX: 'auto' }}>

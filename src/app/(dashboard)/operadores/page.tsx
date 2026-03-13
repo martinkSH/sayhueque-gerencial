@@ -1,6 +1,7 @@
 import { createClient } from '@/lib/supabase/server'
 import { getUserProfile, expandAreas } from '@/lib/user-context'
 import { Briefcase } from 'lucide-react'
+import { format } from 'date-fns'
 
 export const dynamic = 'force-dynamic'
 

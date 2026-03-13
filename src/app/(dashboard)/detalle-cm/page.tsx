@@ -99,7 +99,7 @@ export default async function DetalleCMPage({
   }
 
   // Salesforce map para B2C — también paginado
-  const sfMap = new Map<string, number>()
+  const sfMap = new Map<string, { venta: number; ganancia: number }>()
   const b2cFileCodes = allRows.filter(r => r.is_b2c).map(r => r.file_code.toUpperCase())
 
   if (b2cFileCodes.length > 0) {
@@ -108,14 +108,14 @@ export default async function DetalleCMPage({
     while (sfFetching) {
       const { data: sfBatch } = await supabase
         .from('salesforce_rows')
-        .select('file_code, venta')
+        .select('file_code, venta, ganancia')
         .eq('upload_id', uploadId)
         .order('file_code')
         .range(sfOffset, sfOffset + PAGE_SIZE - 1)
 
       if (!sfBatch || sfBatch.length === 0) break
-      sfBatch.forEach((r: { file_code: string; venta: number | null }) =>
-        sfMap.set(r.file_code.toUpperCase(), r.venta ?? 0)
+      sfBatch.forEach((r: { file_code: string; venta: number | null; ganancia: number | null }) =>
+        sfMap.set(r.file_code.toUpperCase(), { venta: r.venta ?? 0, ganancia: r.ganancia ?? 0 })
       )
       if (sfBatch.length < PAGE_SIZE) sfFetching = false
       else sfOffset += PAGE_SIZE
@@ -131,11 +131,13 @@ export default async function DetalleCMPage({
       return true
     })
     .map(r => {
-      const hasSf = r.is_b2c && sfMap.has(r.file_code.toUpperCase())
-      const venta = hasSf ? sfMap.get(r.file_code.toUpperCase())! : (r.venta_tl ?? 0)
+      const sfData = r.is_b2c ? sfMap.get(r.file_code.toUpperCase()) : undefined
+      const hasSf = sfData !== undefined
+      const venta = hasSf ? sfData!.venta : (r.venta_tl ?? 0)
       const costo = r.costo ?? 0
       const ganancia = venta - costo
       const cm = venta > 0 ? ganancia / venta : 0
+      const ganancia_sf = hasSf ? sfData!.ganancia : null
       return {
         file_code: r.file_code,
         area: r.booking_branch,
@@ -147,6 +149,7 @@ export default async function DetalleCMPage({
         estado: r.estado ?? '',
         pax: r.cant_pax ?? 0,
         costo, venta, ganancia, cm,
+        ganancia_sf,
         sin_sf: r.is_b2c && !hasSf,
       }
     })

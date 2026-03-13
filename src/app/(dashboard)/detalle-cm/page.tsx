@@ -160,6 +160,18 @@ export default async function DetalleCMPage({
       }
     })
 
+  // Excepciones CM (todas las áreas — admins ven todo, comerciales ven solo la suya)
+  const { data: excepcionesRaw } = await supabase
+    .from('cm_excepciones')
+    .select('file_code, area, motivo, aprobado_por_nombre')
+    .eq('area', areaFiltro)
+
+  const excepciones = (excepcionesRaw ?? []) as {
+    file_code: string; area: string; motivo: string | null; aprobado_por_nombre: string | null
+  }[]
+
+  const userNombre = userProfile?.nombre ?? userProfile?.email ?? 'Usuario'
+
   return (
     <DetalleCMClient
       files={files}
@@ -169,6 +181,8 @@ export default async function DetalleCMPage({
       rangoMin={rango.cm_min}
       rangoMax={rango.cm_max}
       isAdmin={isAdmin}
+      excepciones={excepciones}
+      userNombre={userNombre}
     />
   )
 }

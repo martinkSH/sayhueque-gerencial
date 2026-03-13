@@ -140,7 +140,7 @@ export default async function DetalleCMPage({
       const ganancia = venta - costo
       const cm = venta > 0 ? ganancia / venta : 0
       const ganancia_sf = hasSf ? sfData!.ganancia : null
-      const venta_sf = hasSf ? sfData!.venta : null
+      const venta_tp = hasSf ? (r.venta_tl ?? 0) : null  // TP solo para B2C con match SF
       return {
         file_code: r.file_code,
         area: r.booking_branch,
@@ -153,7 +153,7 @@ export default async function DetalleCMPage({
         pax: r.cant_pax ?? 0,
         costo, venta, ganancia, cm,
         ganancia_sf,
-        venta_sf,
+        venta_sf: venta_tp,
         sin_sf: r.is_b2c && !hasSf,
       }
     })

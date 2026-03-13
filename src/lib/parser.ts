@@ -35,6 +35,8 @@ export interface TLRow {
   contribucion_mg: number | null
   temporada: string | null
   mes_season_idx: number | null
+  impuesto_venta: number | null
+  impuesto_costo: number | null
 }
 
 export interface SFRow {
@@ -235,6 +237,8 @@ function parseTeamLeader(wb: XLSX.WorkBook): TLRow[] {
   const cVenta   = col('venta')
   const cDept    = col('bookingdepartmentname')
   const cCliente = col('cliente')
+  const cImpVenta = col('impuestos venta')
+  const cImpCosto = col('impuesto costo')
 
   if (cFile < 0 || cVenta < 0 || cCosto < 0)
     throw new Error('Faltan columnas clave en Reporte Team Leader (File/Venta/Costo)')
@@ -271,6 +275,8 @@ function parseTeamLeader(wb: XLSX.WorkBook): TLRow[] {
       contribucion_mg:    cm,
       temporada:          getTemporada(fechaIn),
       mes_season_idx:     seasonMonthIdx(fechaIn),
+      impuesto_venta:     cImpVenta >= 0 ? (toNum(getCell(ws, r, cImpVenta)) || 0) : null,
+      impuesto_costo:     cImpCosto >= 0 ? (toNum(getCell(ws, r, cImpCosto)) || 0) : null,
     })
   }
 

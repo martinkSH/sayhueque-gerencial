@@ -1,6 +1,7 @@
 import { createClient } from '@/lib/supabase/server'
 import { getUserProfile, expandAreas, B2C_AREAS } from '@/lib/user-context'
 import { PieChart } from 'lucide-react'
+import { format } from 'date-fns'
 
 export const dynamic = 'force-dynamic'
 

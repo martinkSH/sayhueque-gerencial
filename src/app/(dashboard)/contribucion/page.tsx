@@ -1,6 +1,7 @@
 import { createClient } from '@/lib/supabase/server'
-import { PieChart } from 'lucide-react'
-import { getUserProfile, expandAreas, B2C_AREAS } from '@/lib/user-context'
+import { getUserProfile, expandAreas } from '@/lib/user-context'
+
+export const dynamic = 'force-dynamic'
 
 function formatUSD(n: number) {
   return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 }).format(n)
@@ -69,24 +70,32 @@ export default async function ContribucionPage({
 
   let query = supabase
     .from('team_leader_rows')
-    .select('file_code, booking_branch, vendedor, venta, ganancia, cant_pax, is_b2c')
+    .select('file_code, booking_branch, vendedor, venta, costo, ganancia, cant_pax, is_b2c')
     .eq('upload_id', uploadId).eq('temporada', temp)
     .in('estado', ESTADOS_CONFIRMADOS).limit(10000)
   if (areasReales) query = query.in('booking_branch', areasReales)
   const { data: tlRows } = await query
 
+  // Solo necesitamos venta de Salesforce para B2C
   const { data: sfRows } = await supabase
-    .from('salesforce_rows').select('file_code, venta, ganancia').eq('upload_id', uploadId)
-  const sfMap = new Map<string, { venta: number; ganancia: number }>()
-  sfRows?.forEach(r => sfMap.set(r.file_code.toUpperCase(), { venta: r.venta ?? 0, ganancia: r.ganancia ?? 0 }))
+    .from('salesforce_rows').select('file_code, venta').eq('upload_id', uploadId)
+  const sfMap = new Map<string, number>()
+  sfRows?.forEach(r => sfMap.set(r.file_code.toUpperCase(), r.venta ?? 0))
 
   type FileData = { file_code: string; area: string; vendedor: string; venta: number; ganancia: number; pax: number; cm: number }
   const filesMap = new Map<string, FileData>()
   tlRows?.forEach(r => {
     if (filesMap.has(r.file_code)) return
-    const sf = r.is_b2c ? sfMap.get(r.file_code.toUpperCase()) : null
-    const venta = sf ? sf.venta : (r.venta ?? 0)
-    const ganancia = sf ? sf.ganancia : (r.ganancia ?? 0)
+    let venta: number
+    let ganancia: number
+    if (r.is_b2c) {
+      const ventaSF = sfMap.get(r.file_code.toUpperCase()) ?? (r.venta ?? 0)
+      venta = ventaSF
+      ganancia = ventaSF - (r.costo ?? 0)  // venta SF - costo TL
+    } else {
+      venta = r.venta ?? 0
+      ganancia = r.ganancia ?? 0
+    }
     const area = B2C_AREAS.includes(r.booking_branch ?? '') ? 'B2C' : (r.booking_branch ?? 'Sin área')
     filesMap.set(r.file_code, { file_code: r.file_code, area, vendedor: r.vendedor ?? '—', venta, ganancia, pax: r.cant_pax ?? 0, cm: venta > 0 ? ganancia / venta : 0 })
   })

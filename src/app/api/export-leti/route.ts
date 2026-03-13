@@ -58,15 +58,21 @@ export async function GET(req: Request) {
   wb.created = new Date()
 
   // Colors
-  const HEADER_BG = '1E3A5F'    // dark blue
-  const SUBHEADER_BG = '2D6A4F' // dark green
-  const AREA_BG = 'C8E6C9'      // light green for area title
-  const COL_HDR_BG = '37474F'   // dark slate for column headers
-  const TOTAL_BG = 'E8F5E9'     // very light green for totals
-  const STRIPE = 'F5F5F5'       // light gray stripe
+  const HEADER_BG = '1E3A5F'
+  const AREA_BG = 'C8E6C9'
+  const COL_HDR_BG = '37474F'
+  const TOTAL_BG = 'E8F5E9'
+  const STRIPE = 'F5F5F5'
 
   const areasToRender = AREAS_ORDER.filter(a => byArea.has(a))
     .concat(Array.from(byArea.keys()).filter(a => !AREAS_ORDER.includes(a)))
+
+  // Create Resumen sheet FIRST so it's the first tab
+  const wsSummary = wb.addWorksheet('Resumen', { properties: { tabColor: { argb: 'FF1E3A5F' } } })
+  wsSummary.columns = [
+    { width: 16 }, { width: 14 }, { width: 15 }, { width: 13 }, { width: 15 },
+    { width: 15 }, { width: 13 }, { width: 15 }, { width: 14 }, { width: 10 },
+  ]
 
   for (const area of areasToRender) {
     const areaRows = byArea.get(area)!
@@ -208,12 +214,6 @@ export async function GET(req: Request) {
   }
 
   // Summary sheet with all areas
-  const wsSummary = wb.addWorksheet('Resumen', { properties: { tabColor: { argb: 'FF1E3A5F' } } })
-  wsSummary.columns = [
-    { width: 16 }, { width: 14 }, { width: 15 }, { width: 13 }, { width: 15 },
-    { width: 15 }, { width: 13 }, { width: 15 }, { width: 14 }, { width: 10 },
-  ]
-
   let sRow = 1
   wsSummary.mergeCells(`A${sRow}:J${sRow}`)
   const sTitleCell = wsSummary.getCell(`A${sRow}`)
@@ -237,7 +237,6 @@ export async function GET(req: Request) {
   wsSummary.getRow(sRow).height = 22
   sRow++
 
-  let lastAreaEnd = 0
   const areaTotalRows: number[] = []
 
   for (const area of areasToRender) {
@@ -319,9 +318,6 @@ export async function GET(req: Request) {
     }
   }
   wsSummary.getRow(sRow).height = 24
-
-  // Move summary to first position
-  wb.moveSheet('Resumen', 0)
 
   // Generate buffer
   const buffer = await wb.xlsx.writeBuffer()

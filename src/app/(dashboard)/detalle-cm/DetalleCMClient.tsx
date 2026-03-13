@@ -90,6 +90,7 @@ export default function DetalleCMClient({
   }, [filtered, sortKey, sortDir])
 
   // Totales
+  const totalPax = sorted.reduce((s, r) => s + r.pax, 0)
   const totalVenta = sorted.reduce((s, r) => s + r.venta, 0)
   const totalCosto = sorted.reduce((s, r) => s + r.costo, 0)
   const totalGanancia = sorted.reduce((s, r) => s + r.ganancia, 0)
@@ -221,6 +222,52 @@ export default function DetalleCMClient({
                 ))}
               </tr>
             </thead>
+            {/* Fila de totales fija */}
+            <tbody>
+              <tr style={{ background: 'var(--surface2)', borderBottom: '2px solid var(--teal-600)' }}>
+                <td style={{ padding: '9px 14px', fontWeight: 700, fontSize: 11, color: 'var(--teal-400)', whiteSpace: 'nowrap' }}>
+                  TOTAL ({sorted.length} files)
+                </td>
+                <td colSpan={6} />
+                <td style={{ padding: '9px 14px', textAlign: 'right', fontFamily: 'var(--font-mono)', fontWeight: 700, fontSize: 12, color: 'var(--text)' }}>
+                  {totalPax.toLocaleString('es-AR')}
+                </td>
+                <td style={{ padding: '9px 14px', textAlign: 'right', fontFamily: 'var(--font-mono)', fontWeight: 700, fontSize: 12, color: 'var(--muted)' }}>
+                  {formatUSD(totalCosto)}
+                </td>
+                <td style={{ padding: '9px 14px', textAlign: 'right', fontFamily: 'var(--font-mono)', fontWeight: 700, fontSize: 12, color: 'var(--text)' }}>
+                  {formatUSD(totalVenta)}
+                </td>
+                <td style={{ padding: '9px 14px', textAlign: 'right', fontFamily: 'var(--font-mono)', fontWeight: 700, fontSize: 12, color: '#4ade80' }}>
+                  {formatUSD(totalGanancia)}
+                </td>
+                <td style={{ padding: '9px 14px', textAlign: 'right' }}>
+                  {hasSfData ? (
+                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 1 }}>
+                      <span style={{ fontFamily: 'var(--font-mono)', fontWeight: 700, fontSize: 12, color: '#60a5fa' }}>{formatUSD(totalGananciaSf)}</span>
+                      {totalGanancia > 0 && (
+                        <span style={{ fontSize: 10, fontFamily: 'var(--font-mono)', fontWeight: 600,
+                          color: Math.abs(((totalGananciaSf - totalGanancia) / totalGanancia) * 100) < 5 ? 'var(--muted)' :
+                            totalGananciaSf > totalGanancia ? '#4ade80' : '#f87171' }}>
+                          {((totalGananciaSf - totalGanancia) / totalGanancia) >= 0 ? '+' : ''}
+                          {(((totalGananciaSf - totalGanancia) / totalGanancia) * 100).toFixed(1)}%
+                        </span>
+                      )}
+                    </div>
+                  ) : <span style={{ color: 'var(--muted)', fontSize: 11 }}>—</span>}
+                </td>
+                <td style={{ padding: '9px 14px', textAlign: 'right' }}>
+                  <span style={{
+                    padding: '3px 8px', borderRadius: 6, fontWeight: 700, fontSize: 12,
+                    fontFamily: 'var(--font-mono)',
+                    background: getCmColor(totalCM, { cm_min: rangoMin, cm_max: rangoMax }).bg,
+                    color: getCmColor(totalCM, { cm_min: rangoMin, cm_max: rangoMax }).color,
+                  }}>
+                    {(totalCM * 100).toFixed(1)}%
+                  </span>
+                </td>
+              </tr>
+            </tbody>
             <tbody>
               {sorted.length === 0 ? (
                 <tr><td colSpan={COLS.length} style={{ padding: '28px 20px', textAlign: 'center', color: 'var(--muted)' }}>Sin resultados</td></tr>

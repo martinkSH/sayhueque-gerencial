@@ -1,6 +1,7 @@
 import { createClient } from '@/lib/supabase/server'
-import { TrendingUp } from 'lucide-react'
 import { getUserProfile, expandAreas } from '@/lib/user-context'
+
+export const dynamic = 'force-dynamic'
 
 function formatUSD(n: number) {
   return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 }).format(n)

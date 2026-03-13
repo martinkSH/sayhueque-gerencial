@@ -1,6 +1,7 @@
 import { createClient } from '@/lib/supabase/server'
 import { getUserProfile, expandAreas, B2C_AREAS } from '@/lib/user-context'
 import { Calendar, CheckCircle2, TrendingUp, Upload, Users } from 'lucide-react'
+import Link from 'next/link'
 
 export const dynamic = 'force-dynamic'
 

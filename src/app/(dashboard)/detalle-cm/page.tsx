@@ -101,7 +101,7 @@ export default async function DetalleCMPage({
   }
 
   // Salesforce map para B2C — también paginado
-  const sfMap = new Map<string, { venta: number; ganancia: number }>()
+  const sfMap = new Map<string, { venta: number; ganancia: number; costo: number }>()
   const b2cFileCodes = allRows.filter(r => r.is_b2c).map(r => r.file_code.toUpperCase())
 
   if (b2cFileCodes.length > 0) {
@@ -117,7 +117,7 @@ export default async function DetalleCMPage({
 
       if (!sfBatch || sfBatch.length === 0) break
       sfBatch.forEach((r: { file_code: string; venta: number | null; ganancia: number | null }) =>
-        sfMap.set(r.file_code.toUpperCase(), { venta: r.venta ?? 0, ganancia: r.ganancia ?? 0 })
+        sfMap.set(r.file_code.toUpperCase(), { venta: r.venta ?? 0, ganancia: r.ganancia ?? 0, costo: (r.venta ?? 0) - (r.ganancia ?? 0) })
       )
       if (sfBatch.length < PAGE_SIZE) sfFetching = false
       else sfOffset += PAGE_SIZE
@@ -140,7 +140,8 @@ export default async function DetalleCMPage({
       const ganancia = venta - costo
       const cm = venta > 0 ? ganancia / venta : 0
       const ganancia_sf = hasSf ? sfData!.ganancia : null
-      const venta_tp = hasSf ? (r.venta_tl ?? 0) : null  // TP solo para B2C con match SF
+      const venta_tp = hasSf ? (r.venta_tl ?? 0) : null
+      const costo_sf = hasSf ? sfData!.costo : null
       return {
         file_code: r.file_code,
         area: r.booking_branch,
@@ -154,6 +155,7 @@ export default async function DetalleCMPage({
         costo, venta, ganancia, cm,
         ganancia_sf,
         venta_sf: venta_tp,
+        costo_sf,
         sin_sf: r.is_b2c && !hasSf,
       }
     })

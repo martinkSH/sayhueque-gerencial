@@ -59,7 +59,7 @@ export async function GET(req: Request) {
   const STRIPE = 'F5F5F5'       // light gray stripe
 
   const areasToRender = AREAS_ORDER.filter(a => byArea.has(a))
-    .concat([...byArea.keys()].filter(a => !AREAS_ORDER.includes(a)))
+    .concat(Array.from(byArea.keys()).filter(a => !AREAS_ORDER.includes(a)))
 
   for (const area of areasToRender) {
     const areaRows = byArea.get(area)!

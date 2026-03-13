@@ -2,6 +2,8 @@ import { createClient } from '@/lib/supabase/server'
 import { getUserProfile, expandAreas } from '@/lib/user-context'
 import DetalleCMClient from './DetalleCMClient'
 
+export const dynamic = 'force-dynamic'
+
 const ESTADOS = ['Final + Day by Day','Final','Confirmed','Pre Final','En Operaciones','Cerrado','Cierre Operativo']
 const PAGE_SIZE = 1000
 
@@ -138,6 +140,7 @@ export default async function DetalleCMPage({
       const ganancia = venta - costo
       const cm = venta > 0 ? ganancia / venta : 0
       const ganancia_sf = hasSf ? sfData!.ganancia : null
+      const venta_sf = hasSf ? sfData!.venta : null
       return {
         file_code: r.file_code,
         area: r.booking_branch,
@@ -150,6 +153,7 @@ export default async function DetalleCMPage({
         pax: r.cant_pax ?? 0,
         costo, venta, ganancia, cm,
         ganancia_sf,
+        venta_sf,
         sin_sf: r.is_b2c && !hasSf,
       }
     })

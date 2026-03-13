@@ -170,7 +170,7 @@ export default async function DetalleCMPage({
     file_code: string; area: string; motivo: string | null; aprobado_por_nombre: string | null
   }[]
 
-  const userNombre = userProfile?.nombre ?? userProfile?.email ?? 'Usuario'
+  const userNombre = userProfile?.full_name ?? userProfile?.email ?? 'Usuario'
 
   return (
     <DetalleCMClient

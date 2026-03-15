@@ -31,14 +31,12 @@ export default async function ClientesPage({
 
   const uploadId = lastUpload.id
 
-  // Áreas disponibles (filtradas por rol)
+  // Áreas disponibles usando RPC (evita límite de filas de Supabase)
   const { data: areasRaw } = await supabase
-    .from('team_leader_rows').select('booking_branch')
-    .eq('upload_id', uploadId).eq('temporada', temp)
-    .in('estado', ESTADOS_CONFIRMADOS).limit(10000)
+    .rpc('get_areas_disponibles', { p_upload_id: uploadId, p_temporada: temp })
 
   const areasSet = new Set<string>()
-  areasRaw?.forEach(r => { if (r.booking_branch) areasSet.add(r.booking_branch) })
+  areasRaw?.forEach((r: { booking_branch: string }) => { if (r.booking_branch) areasSet.add(r.booking_branch) })
 
   // Filtrar áreas según rol
   const availableRaw = expandedUserAreas

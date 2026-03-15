@@ -9,7 +9,7 @@ function formatUSD(n: number) {
   return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 }).format(n)
 }
 
-const ESTADOS_CONFIRMADOS = ['Final + Day by Day','Confirmed','Pre Final','En Operaciones','Cerrado','Cierre Operativo']
+const ESTADOS_CONFIRMADOS = ['Final + Day by Day','Final','Confirmed','Pre Final','En Operaciones','Cerrado','Cierre Operativo']
 const TEMPORADAS = ['25/26', '24/25', '26/27']
 
 export default async function ClientesPage({

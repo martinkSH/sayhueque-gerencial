@@ -75,6 +75,7 @@ export default function Sidebar({ user }: Props) {
           <div>
             <div style={{ fontWeight: 600, fontSize: 13, color: 'var(--text)' }}>Say Hueque</div>
             <div style={{ fontSize: 11, color: 'var(--muted)' }}>Gerencial</div>
+            <div style={{ fontSize: 9, color: 'var(--border)', marginTop: 1, letterSpacing: '0.02em' }}>dev. Martin Kravez</div>
           </div>
         </div>
       </div>

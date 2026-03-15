@@ -121,14 +121,18 @@ export default async function DashboardPage({
   })
   const enCursoAreas = Array.from(enCursoPorArea.entries()).sort((a, b) => b[1].viajes - a[1].viajes)
 
-  // Ganancia por área 25/26 via RPC
+  // Ganancia por área 25/26 via RPC — BRUTO
   const { data: gananciaPorAreaRaw } = await supabase
     .rpc('get_ganancia_por_area', { p_upload_id: uploadId, p_areas: p_areas })
 
   type AreaRow = { area: string; venta: number; ganancia: number }
   const allAreas = (gananciaPorAreaRaw ?? []) as AreaRow[]
 
-  // Agrupar B2C
+  // Ganancia por área 25/26 via RPC — NETO
+  const { data: gananciaNetaRaw } = await supabase
+    .rpc('get_ganancia_neta_por_area', { p_upload_id: uploadId, p_areas: p_areas })
+
+  // Agrupar B2C — BRUTO
   const b2c = { venta: 0, ganancia: 0 }
   const otros: AreaRow[] = []
   allAreas.forEach(row => {
@@ -139,7 +143,6 @@ export default async function DashboardPage({
       otros.push(row)
     }
   })
-  // Solo mostrar B2C agrupado si hay datos b2c
   const areasSorted: AreaRow[] = [
     ...(b2c.venta > 0 || b2c.ganancia !== 0 ? [{ area: 'B2C (Web + Plataformas + Walk In)', ...b2c }] : []),
     ...otros,
@@ -148,6 +151,27 @@ export default async function DashboardPage({
   const totalVenta = areasSorted.reduce((s, r) => s + r.venta, 0)
   const totalGanancia = areasSorted.reduce((s, r) => s + r.ganancia, 0)
   const totalCM = totalVenta > 0 ? totalGanancia / totalVenta : 0
+
+  // Agrupar B2C — NETO
+  const allAreasNeta = (gananciaNetaRaw ?? []) as AreaRow[]
+  const b2cNeta = { venta: 0, ganancia: 0 }
+  const otrosNeta: AreaRow[] = []
+  allAreasNeta.forEach(row => {
+    if (B2C_AREAS.includes(row.area)) {
+      b2cNeta.venta += row.venta
+      b2cNeta.ganancia += row.ganancia
+    } else {
+      otrosNeta.push(row)
+    }
+  })
+  const areasNetaSorted: AreaRow[] = [
+    ...(b2cNeta.venta > 0 || b2cNeta.ganancia !== 0 ? [{ area: 'B2C (Web + Plataformas + Walk In)', ...b2cNeta }] : []),
+    ...otrosNeta,
+  ].sort((a, b) => b.ganancia - a.ganancia)
+
+  const totalVentaNeta = areasNetaSorted.reduce((s, r) => s + r.venta, 0)
+  const totalGananciaNeta = areasNetaSorted.reduce((s, r) => s + r.ganancia, 0)
+  const totalCMNeta = totalVentaNeta > 0 ? totalGananciaNeta / totalVentaNeta : 0
 
   const uploadDate = format(new Date(lastUpload.created_at), "d 'de' MMMM, HH:mm", { locale: es })
 
@@ -249,11 +273,11 @@ export default async function DashboardPage({
         </div>
       )}
 
-      {/* Ganancia por área */}
+      {/* Ganancia por área — BRUTO */}
       <div className="card" style={{ padding: '20px 24px' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 16 }}>
           <TrendingUp size={14} style={{ color: 'var(--teal-400)' }} />
-          <h2 style={{ fontSize: 14, fontWeight: 600, color: 'var(--text)', margin: 0 }}>Ganancia por área — temporada 25/26</h2>
+          <h2 style={{ fontSize: 14, fontWeight: 600, color: 'var(--text)', margin: 0 }}>Ganancia por área — temporada 25/26 <span style={{ color: 'var(--muted)', fontWeight: 400 }}>(BRUTO)</span></h2>
         </div>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
           {areasSorted.map(row => {
@@ -276,7 +300,6 @@ export default async function DashboardPage({
               </div>
             )
           })}
-          {/* Total empresa */}
           <div style={{ marginTop: 8, paddingTop: 12, borderTop: '2px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--text)' }}>
               {isAdmin ? 'TOTAL EMPRESA' : 'TOTAL'}
@@ -293,6 +316,58 @@ export default async function DashboardPage({
               <div style={{ textAlign: 'right' }}>
                 <div style={{ fontSize: 10, color: 'var(--muted)' }}>CM</div>
                 <div style={{ fontSize: 13, fontFamily: 'var(--font-mono)', fontWeight: 700, color: 'var(--teal-400)' }}>{(totalCM * 100).toFixed(1)}%</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Ganancia por área — NETO */}
+      <div className="card" style={{ padding: '20px 24px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
+          <TrendingUp size={14} style={{ color: '#a78bfa' }} />
+          <h2 style={{ fontSize: 14, fontWeight: 600, color: 'var(--text)', margin: 0 }}>Ganancia por área — temporada 25/26 <span style={{ color: 'var(--muted)', fontWeight: 400 }}>(NETO)</span></h2>
+        </div>
+        <p style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 16, marginTop: 2 }}>
+          Venta y costo descontados de IVA · IVA venta B2C estimado ~4%
+        </p>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+          {areasNetaSorted.map(row => {
+            const maxGan = Math.max(...areasNetaSorted.map(r => r.ganancia), 1)
+            const pct = Math.max(0, (row.ganancia / maxGan) * 100)
+            const cm = row.venta > 0 ? row.ganancia / row.venta : 0
+            const isB2C = row.area.startsWith('B2C')
+            return (
+              <div key={row.area}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
+                  <span style={{ fontSize: 13, color: isB2C ? '#a78bfa' : 'var(--text)', fontWeight: isB2C ? 600 : 400 }}>{row.area}</span>
+                  <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
+                    <span style={{ fontSize: 11, color: 'var(--muted)', fontFamily: 'var(--font-mono)' }}>CM {(cm * 100).toFixed(1)}%</span>
+                    <span style={{ fontSize: 13, fontWeight: 500, color: row.ganancia < 0 ? '#f87171' : 'var(--text)', fontFamily: 'var(--font-mono)' }}>{formatUSD(row.ganancia)}</span>
+                  </div>
+                </div>
+                <div style={{ height: 4, background: 'var(--surface2)', borderRadius: 2 }}>
+                  <div style={{ height: '100%', width: `${pct}%`, background: isB2C ? '#7c3aed' : '#5b21b6', borderRadius: 2 }} />
+                </div>
+              </div>
+            )
+          })}
+          <div style={{ marginTop: 8, paddingTop: 12, borderTop: '2px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--text)' }}>
+              {isAdmin ? 'TOTAL EMPRESA' : 'TOTAL'}
+            </span>
+            <div style={{ display: 'flex', gap: 20, alignItems: 'center' }}>
+              <div style={{ textAlign: 'right' }}>
+                <div style={{ fontSize: 10, color: 'var(--muted)' }}>Venta Neta</div>
+                <div style={{ fontSize: 13, fontFamily: 'var(--font-mono)', color: 'var(--text)' }}>{formatUSD(totalVentaNeta)}</div>
+              </div>
+              <div style={{ textAlign: 'right' }}>
+                <div style={{ fontSize: 10, color: 'var(--muted)' }}>Ganancia Neta</div>
+                <div style={{ fontSize: 13, fontFamily: 'var(--font-mono)', fontWeight: 700, color: '#a78bfa' }}>{formatUSD(totalGananciaNeta)}</div>
+              </div>
+              <div style={{ textAlign: 'right' }}>
+                <div style={{ fontSize: 10, color: 'var(--muted)' }}>CM</div>
+                <div style={{ fontSize: 13, fontFamily: 'var(--font-mono)', fontWeight: 700, color: '#a78bfa' }}>{(totalCMNeta * 100).toFixed(1)}%</div>
               </div>
             </div>
           </div>

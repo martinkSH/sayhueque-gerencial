@@ -317,7 +317,7 @@ export default async function DashboardPage({
       <div className="card" style={{ padding: '20px 24px' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 16 }}>
           <TrendingUp size={14} style={{ color: 'var(--teal-400)' }} />
-          <h2 style={{ fontSize: 14, fontWeight: 600, color: 'var(--text)', margin: 0 }}>Ganancia por área — temporada 25/26 <span style={{ color: 'var(--muted)', fontWeight: 400 }}>(BRUTO)</span></h2>
+          <h2 style={{ fontSize: 14, fontWeight: 600, color: 'var(--text)', margin: 0 }}>Ganancia por área — temporada 25/26 <span style={{ color: 'var(--muted)', fontWeight: 400 }}>(TOTAL)</span></h2>
         </div>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
           {areasSorted.map(row => {
@@ -366,7 +366,7 @@ export default async function DashboardPage({
       <div className="card" style={{ padding: '20px 24px' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
           <TrendingUp size={14} style={{ color: '#a78bfa' }} />
-          <h2 style={{ fontSize: 14, fontWeight: 600, color: 'var(--text)', margin: 0 }}>Ganancia por área — temporada 25/26 <span style={{ color: 'var(--muted)', fontWeight: 400 }}>(NETO)</span></h2>
+          <h2 style={{ fontSize: 14, fontWeight: 600, color: 'var(--text)', margin: 0 }}>Ganancia por área — temporada 25/26 <span style={{ color: 'var(--muted)', fontWeight: 400 }}>(-IVA)</span></h2>
         </div>
         <p style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 16, marginTop: 2 }}>
           Venta y costo descontados de IVA · IVA venta B2C estimado ~4%
@@ -420,7 +420,7 @@ export default async function DashboardPage({
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 16 }}>
             <TrendingUp size={14} style={{ color: 'var(--teal-400)' }} />
             <h2 style={{ fontSize: 14, fontWeight: 600, color: 'var(--text)', margin: 0 }}>
-              Ganancia por área — temporada 26/27 <span style={{ color: 'var(--muted)', fontWeight: 400 }}>(BRUTO)</span>
+              Ganancia por área — temporada 26/27 <span style={{ color: 'var(--muted)', fontWeight: 400 }}>(TOTAL)</span>
             </h2>
           </div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
@@ -471,7 +471,7 @@ export default async function DashboardPage({
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
             <TrendingUp size={14} style={{ color: '#a78bfa' }} />
             <h2 style={{ fontSize: 14, fontWeight: 600, color: 'var(--text)', margin: 0 }}>
-              Ganancia por área — temporada 26/27 <span style={{ color: 'var(--muted)', fontWeight: 400 }}>(NETO)</span>
+              Ganancia por área — temporada 26/27 <span style={{ color: 'var(--muted)', fontWeight: 400 }}>(-IVA)</span>
             </h2>
           </div>
           <p style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 16, marginTop: 2 }}>

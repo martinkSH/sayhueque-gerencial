@@ -60,6 +60,8 @@ function areaFromFileCode(fileCode: string): string | null {
   const prefix = fileCode.slice(0, 2).toUpperCase()
   return FILE_PREFIX_MAP[prefix] ?? null
 }
+
+function toISO(v: unknown): string | null {
   if (!v) return null
   if (v instanceof Date) {
     if (v.getFullYear() <= 1900) return null

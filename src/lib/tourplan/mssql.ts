@@ -128,6 +128,7 @@ export async function fetchTourplanData(): Promise<{
       WHERE BookingBranchCode IN ('WE','WI','PL','AL','DM','GR','BN')
         AND BookingTravelDate >= '20250501'
         AND BookingTravelDate <= '20280501'
+        AND BookingStatus IN ('C7','CD','CT','FI','FN','IN','OK','OP','PF','XC')
       ORDER BY BookingTravelDate DESC
     `)
 

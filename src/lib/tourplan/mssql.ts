@@ -129,6 +129,9 @@ export async function fetchTourplanData(): Promise<{
         AND BookingTravelDate >= '20250501'
         AND BookingTravelDate <= '20280501'
         AND BookingStatus IN ('C7','CD','CT','FI','FN','IN','OK','OP','PF','XC')
+        AND BookingDepartmentName NOT IN ('Test','Sites','Personal Trips','FAM Tours')
+        AND BookingBranchName NOT IN ('Test')
+        AND BookingStatusName NOT IN ('Quote','Test Booking','Quote - Lost','Bloqueo','Reservation')
       ORDER BY BookingTravelDate DESC
     `)
 

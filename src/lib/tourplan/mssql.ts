@@ -122,8 +122,8 @@ export async function fetchTourplanData(): Promise<{
         BookingAnalysis1Name, BookingAgentName,
         BookingTravelDate, LastServiceDate,
         BookingPaxQty,
-        BookingCostAmount, BookingSellAmount, BookingMarginAmount,
-        BookingSellTaxAmount, BookingCostTaxAmount
+        BookingCostAmount, BookingCostTaxAmount,
+        BookingSellAmount, BookingSellTaxAmount
       FROM vw_BookingHeaderReportData
       WHERE BookingBranchCode IN ('WE','WI','PL','AL','DM','GR','BN')
         AND BookingTravelDate >= '20250501'
@@ -133,8 +133,10 @@ export async function fetchTourplanData(): Promise<{
     `)
 
     const teamLeader: TLRowTP[] = tlResult.recordset.map((r: any) => {
-      const venta  = Number(r.BookingSellAmount)   || 0
-      const costo  = Number(r.BookingCostAmount)   || 0
+      const impVenta = Number(r.BookingSellTaxAmount) || 0
+      const impCosto = Number(r.BookingCostTaxAmount)  || 0
+      const venta    = (Number(r.BookingSellAmount) || 0) + impVenta
+      const costo    = (Number(r.BookingCostAmount) || 0) + impCosto
       const ganancia = venta - costo
       const fechaIn  = toISO(r.BookingTravelDate)
       const fechaOut = toISO(r.LastServiceDate)
@@ -158,8 +160,8 @@ export async function fetchTourplanData(): Promise<{
         contribucion_mg:    venta !== 0 ? ganancia / venta : null,
         temporada:          getTemporada(fechaIn),
         mes_season_idx:     seasonMonthIdx(fechaIn),
-        impuesto_venta:     Number(r.BookingSellTaxAmount) || 0,
-        impuesto_costo:     Number(r.BookingCostTaxAmount) || 0,
+        impuesto_venta:     impVenta,
+        impuesto_costo:     impCosto,
       }
     })
 

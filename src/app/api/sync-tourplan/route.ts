@@ -43,6 +43,23 @@ export async function POST(req: Request) {
     if (upErr) throw new Error(`Upload insert: ${upErr.message}`)
     const uploadId = upload.id
 
+    // Copiar salesforce_rows del upload anterior al nuevo
+    const { data: prevUpload } = await supabase
+      .from('uploads').select('id').eq('status', 'ok').neq('id', uploadId)
+      .order('created_at', { ascending: false }).limit(1).single()
+
+    if (prevUpload) {
+      const { data: prevSF } = await supabase
+        .from('salesforce_rows').select('*').eq('upload_id', prevUpload.id)
+      if (prevSF && prevSF.length > 0) {
+        const newSF = prevSF.map(({ id: _id, upload_id: _uid, ...rest }: any) => ({ ...rest, upload_id: uploadId }))
+        const CHUNK = 500
+        for (let i = 0; i < newSF.length; i += CHUNK) {
+          await supabase.from('salesforce_rows').insert(newSF.slice(i, i + CHUNK))
+        }
+      }
+    }
+
     // Insertar TL rows
     const tlRows = teamLeader.map(r => ({ ...r, upload_id: uploadId }))
     await batchUpsert(supabase, 'team_leader_rows', tlRows, 'upload_id,file_code')

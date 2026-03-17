@@ -1,3 +1,4 @@
+export const runtime = 'nodejs'
 /* eslint-disable @typescript-eslint/no-require-imports */
 const sql = require('mssql')
 
@@ -20,20 +21,32 @@ export async function GET() {
   try {
     pool = await sql.connect(config)
 
-    // Team Leader — 1 fila de muestra
     const tl = await pool.request().query(`
       SELECT TOP 1
-        DATEDIFF(DAY, BookingTravelDate, LastServiceDate) AS Cant_Dias,
-        *
+        DATEDIFF(DAY, BookingTravelDate, LastServiceDate) AS Cant_Dias, *
       FROM vw_BookingHeaderReportData
       WHERE BookingBranchCode IN ('WE','WI','PL','AL','DM','GR','BN')
     `)
 
-    // Bookings Audit — 1 fila de muestra
+    const branches = await pool.request().query(`
+      SELECT DISTINCT
+        BookingBranchCode,
+        BookingBranchName,
+        LEFT(BookingReference, 4) AS prefijo,
+        count(*) AS cant
+      FROM vw_BookingHeaderReportData
+      WHERE BookingBranchCode IN ('WE','WI','PL','AL','DM','GR','BN')
+        AND BookingTravelDate >= '20250501'
+      GROUP BY BookingBranchCode, BookingBranchName, LEFT(BookingReference, 4)
+      ORDER BY BookingBranchCode, cant DESC
+    `)
+
     const audit = await pool.request().query(`
       SELECT TOP 1
-        x.Reference, x.FULL_REFERENCE, x.PrevBookingStatus AS PreviousStatus,
-        x.BOOKINGSTATUS AS NewStatus, x.DateOfChange, x.ChangedBy,
+        x.Reference, x.FULL_REFERENCE,
+        x.PrevBookingStatus AS PreviousStatus,
+        x.BOOKINGSTATUS AS NewStatus,
+        x.DateOfChange, x.ChangedBy,
         x.TRAVELDATE, x.BRANCH, x.Analysis1, x.Analysis3, x.BookingStatus
       FROM (
         SELECT
@@ -58,6 +71,7 @@ export async function GET() {
         columns: Object.keys(tl.recordset[0] ?? {}),
         sample:  tl.recordset[0],
       },
+      branches: branches.recordset,
       bookingsAudit: {
         columns: Object.keys(audit.recordset[0] ?? {}),
         sample:  audit.recordset[0],

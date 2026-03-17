@@ -46,7 +46,20 @@ const BRANCH_MAP: Record<string, string> = {
   'BN': 'Booknow',
 }
 
-function toISO(v: unknown): string | null {
+const FILE_PREFIX_MAP: Record<string, string> = {
+  'WE': 'Web',
+  'WI': 'Walk In',
+  'PL': 'Plataformas',
+  'AL': 'Aliwen',
+  'DM': 'DMC FITS',
+  'GR': 'Grupos DMC',
+  'BN': 'Booknow',
+}
+
+function areaFromFileCode(fileCode: string): string | null {
+  const prefix = fileCode.slice(0, 2).toUpperCase()
+  return FILE_PREFIX_MAP[prefix] ?? null
+}
   if (!v) return null
   if (v instanceof Date) {
     if (v.getFullYear() <= 1900) return null
@@ -202,7 +215,7 @@ export async function fetchTourplanData(): Promise<{
       return {
         file_code:       String(r.FULL_REFERENCE ?? '').trim(),
         fecha_in:        fechaIn,
-        area:            BRANCH_MAP[String(r.BRANCH ?? '').trim()] ?? null,
+        area:            areaFromFileCode(String(r.FULL_REFERENCE ?? '').trim()),
         previous_status: String(r.PreviousStatus ?? '').trim(),  // código raw: QU, OK, FI, etc.
         new_status:      String(r.NewStatus ?? '').trim(),        // código raw
         date_of_change:  toISO(r.DateOfChange),

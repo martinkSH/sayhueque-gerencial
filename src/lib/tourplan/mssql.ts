@@ -203,8 +203,8 @@ export async function fetchTourplanData(): Promise<{
         file_code:       String(r.FULL_REFERENCE ?? '').trim(),
         fecha_in:        fechaIn,
         area:            BRANCH_MAP[String(r.BRANCH ?? '').trim()] ?? null,
-        previous_status: ESTADO_MAP[String(r.PreviousStatus ?? '').trim()] ?? r.PreviousStatus ?? null,
-        new_status:      ESTADO_MAP[String(r.NewStatus ?? '').trim()] ?? r.NewStatus ?? null,
+        previous_status: String(r.PreviousStatus ?? '').trim(),  // código raw: QU, OK, FI, etc.
+        new_status:      String(r.NewStatus ?? '').trim(),        // código raw
         date_of_change:  toISO(r.DateOfChange),
         operador:        r.Analysis1?.trim() || null,
         temporada:       getTemporada(fechaIn),

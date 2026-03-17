@@ -5,6 +5,7 @@ import Link from 'next/link'
 import { format } from 'date-fns'
 import { es } from 'date-fns/locale'
 import ExportLetiButton from '@/components/ExportLetiButton'
+import ExportDanielButton from '@/components/ExportDanielButton'
 import SyncTourplanButton from '@/components/SyncTourplanButton'
 import AreasPanel from '@/components/AreasPanel'
 import type { AreaStat } from '@/components/AreasPanel'
@@ -267,6 +268,7 @@ export default async function DashboardPage({
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
             <SyncTourplanButton />
             <ExportLetiButton temp="25/26" />
+            <ExportDanielButton />
             <Link href="/subir" className="btn-ghost">
               <Upload size={14} /> Actualizar datos
             </Link>

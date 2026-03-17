@@ -95,13 +95,13 @@ export interface TLRowTP {
 
 export interface AuditRowTP {
   file_code: string
+  fecha_in: string | null
   area: string | null
-  operador: string | null
   previous_status: string | null
   new_status: string | null
   date_of_change: string | null
-  changed_by: string | null
-  fecha_in: string | null
+  operador: string | null
+  temporada: string | null
 }
 
 export async function fetchTourplanData(): Promise<{
@@ -190,16 +190,19 @@ export async function fetchTourplanData(): Promise<{
       ORDER BY x.FULL_REFERENCE, x.DateOfChange
     `)
 
-    const audit: AuditRowTP[] = auditResult.recordset.map((r: any) => ({
-      file_code:       String(r.FULL_REFERENCE ?? '').trim(),
-      area:            BRANCH_MAP[String(r.BRANCH ?? '').trim()] ?? null,
-      operador:        r.Analysis1?.trim() || null,
-      previous_status: ESTADO_MAP[String(r.PreviousStatus ?? '').trim()] ?? r.PreviousStatus ?? null,
-      new_status:      ESTADO_MAP[String(r.NewStatus ?? '').trim()] ?? r.NewStatus ?? null,
-      date_of_change:  toISO(r.DateOfChange),
-      changed_by:      r.ChangedBy?.trim() || null,
-      fecha_in:        toISO(r.TRAVELDATE),
-    }))
+    const audit: AuditRowTP[] = auditResult.recordset.map((r: any) => {
+      const fechaIn = toISO(r.TRAVELDATE)
+      return {
+        file_code:       String(r.FULL_REFERENCE ?? '').trim(),
+        fecha_in:        fechaIn,
+        area:            BRANCH_MAP[String(r.BRANCH ?? '').trim()] ?? null,
+        previous_status: ESTADO_MAP[String(r.PreviousStatus ?? '').trim()] ?? r.PreviousStatus ?? null,
+        new_status:      ESTADO_MAP[String(r.NewStatus ?? '').trim()] ?? r.NewStatus ?? null,
+        date_of_change:  toISO(r.DateOfChange),
+        operador:        r.Analysis1?.trim() || null,
+        temporada:       getTemporada(fechaIn),
+      }
+    })
 
     const fetchedAt = new Date().toISOString().replace('T', ' ').slice(0, 16)
     return { teamLeader, audit, fetchedAt }

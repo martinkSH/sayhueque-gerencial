@@ -70,6 +70,7 @@ function UploadZone({
       const data = await res.json()
       setResult(data)
       await supabase.storage.from('excel-uploads').remove([storagePath])
+      if (data.success) setTimeout(() => window.location.reload(), 1500)
     } catch (err: unknown) {
       setResult({ success: false, error: err instanceof Error ? err.message : 'Error desconocido' })
     } finally {

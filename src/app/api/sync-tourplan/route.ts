@@ -49,7 +49,13 @@ export async function POST(req: Request) {
 
     // Insertar audit rows
     if (audit.length > 0) {
-      const auditRows = audit.map(r => ({ ...r, upload_id: uploadId }))
+      // Deduplicar por (file_code, date_of_change) antes del upsert
+      const auditMap = new Map<string, any>()
+      audit.forEach(r => {
+        const key = `${r.file_code}__${r.date_of_change}`
+        auditMap.set(key, { ...r, upload_id: uploadId })
+      })
+      const auditRows = Array.from(auditMap.values())
       await batchUpsert(supabase, 'bookings_audit_rows', auditRows, 'upload_id,file_code,date_of_change')
     }
 

@@ -230,7 +230,7 @@ function buildTemporadaSheets(wb: ExcelJS.Workbook, rowsByTemp: Map<string, Leti
     .concat(Array.from(byArea.keys()).filter(a => !AREAS_ORDER.includes(a)))
 
   // ── Resumen de la temporada ──
-  const wsRes = wb.addWorksheet(`Resumen ${temporada}`, { properties: { tabColor: { argb: 'FF1E3A5F' } } })
+  const wsRes = wb.addWorksheet(`Resumen ${temporada.replace('/', '-')}`, { properties: { tabColor: { argb: 'FF1E3A5F' } } })
   wsRes.columns = WIDTHS.map(w => ({ width: w }))
 
   let sRow = 1
@@ -279,7 +279,7 @@ function buildTemporadaSheets(wb: ExcelJS.Workbook, rowsByTemp: Map<string, Leti
   // ── Por área ──
   for (const area of areasToRender) {
     const areaRows = byArea.get(area)!
-    const ws = wb.addWorksheet(`${area} ${temporada}`, { pageSetup: { fitToPage: true, fitToWidth: 1, orientation: 'landscape' } })
+    const ws = wb.addWorksheet(`${area} ${temporada.replace('/', '-')}`, { pageSetup: { fitToPage: true, fitToWidth: 1, orientation: 'landscape' } })
     ws.columns = WIDTHS.map(w => ({ width: w }))
 
     let row = 1

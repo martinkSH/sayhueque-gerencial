@@ -37,9 +37,10 @@ export default async function ComparativoPage({
 
   const uploadId = lastUpload.id
 
-  // 24/25 desde tablas temp
+  // 24/25 desde tablas temp — UUID fijo, datos históricos permanentes
+  const HISTORICO_ID = '00000000-0000-0000-0000-000000002425'
   const tableName = metric === 'ganancia' ? 'temp_2425_ganancia' : metric === 'venta' ? 'temp_2425_venta' : 'temp_2425_cantidad'
-  const { data: tempRows } = await supabase.from(tableName).select('*').eq('upload_id', uploadId)
+  const { data: tempRows } = await supabase.from(tableName).select('*').eq('upload_id', HISTORICO_ID)
 
   const temp2425: Map<string, number[]> = new Map()
   tempRows?.forEach((row: Record<string, unknown>) => {

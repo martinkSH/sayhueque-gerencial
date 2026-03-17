@@ -2,7 +2,7 @@
 
 import { useState, useMemo } from 'react'
 import { useRouter } from 'next/navigation'
-import { ArrowLeft, BarChart3, TrendingUp, Users, Briefcase, Globe, Building2 } from 'lucide-react'
+import { ArrowLeft, BarChart3, TrendingUp, Users, Briefcase, Globe, Building2, X } from 'lucide-react'
 
 type Row = {
   file_code: string
@@ -22,6 +22,8 @@ type Row = {
   is_b2c: boolean
 }
 
+type DrillFilter = { tipo: string; valor: string }
+
 const MESES_ES = ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic']
 
 function formatUSD(n: number) {
@@ -36,24 +38,147 @@ function mesKey(d: string | null) {
   if (!d) return '9999-99'
   return d.slice(0, 7)
 }
+function fmtDate(d: string | null) {
+  if (!d) return '—'
+  return new Date(d).toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit', year: '2-digit' })
+}
 
 const TEMPORADAS = ['25/26','26/27','24/25']
-
 type Tab = 'resumen' | 'mes' | 'vendedores' | 'operadores' | 'clientes' | 'departamentos'
 
+// ── Modal de detalle de files ────────────────────────────────────────────────
+function FilesModal({ titulo, rows, onClose }: {
+  titulo: string
+  rows: Row[]
+  onClose: () => void
+}) {
+  const totalVenta = rows.reduce((s, r) => s + r.venta, 0)
+  const totalCosto = rows.reduce((s, r) => s + r.costo, 0)
+  const totalGan   = rows.reduce((s, r) => s + r.ganancia, 0)
+  const totalCM    = totalVenta > 0 ? totalGan / totalVenta : 0
+  const cmColor = (cm: number) => cm >= 0.25 ? '#4ade80' : cm >= 0.18 ? '#fb923c' : '#f87171'
+
+  return (
+    <div style={{
+      position: 'fixed', inset: 0, zIndex: 1000,
+      background: 'rgba(0,0,0,0.7)', backdropFilter: 'blur(4px)',
+      display: 'flex', flexDirection: 'column',
+    }} onClick={onClose}>
+      <div
+        onClick={e => e.stopPropagation()}
+        style={{
+          background: 'var(--surface)', flex: 1, display: 'flex', flexDirection: 'column',
+          marginTop: 48, borderRadius: '16px 16px 0 0',
+          border: '1px solid var(--border)', borderBottom: 'none',
+          maxHeight: 'calc(100vh - 48px)', overflow: 'hidden',
+        }}
+      >
+        {/* Header */}
+        <div style={{
+          display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+          padding: '16px 24px', borderBottom: '1px solid var(--border)', flexShrink: 0,
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+            <button onClick={onClose} style={{
+              display: 'flex', alignItems: 'center', gap: 6, padding: '6px 12px',
+              borderRadius: 8, border: '1px solid var(--border)', background: 'var(--surface2)',
+              cursor: 'pointer', color: 'var(--text)', fontSize: 13, fontWeight: 500,
+            }}>
+              <ArrowLeft size={13} /> Atrás
+            </button>
+            <div>
+              <div style={{ fontSize: 15, fontWeight: 600, color: 'var(--text)' }}>{titulo}</div>
+              <div style={{ fontSize: 12, color: 'var(--muted)' }}>{rows.length} files</div>
+            </div>
+          </div>
+          <button onClick={onClose} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--muted)', padding: 4 }}>
+            <X size={18} />
+          </button>
+        </div>
+
+        {/* Tabla */}
+        <div style={{ flex: 1, overflowY: 'auto', overflowX: 'auto' }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+            <thead style={{ position: 'sticky', top: 0, zIndex: 2 }}>
+              <tr style={{ background: 'var(--surface2)' }}>
+                {['File','Fecha IN','Fecha OUT','Estado','Cliente','Depto','Vendedor','Pax','Costo','Venta','Ganancia','CM%'].map(h => (
+                  <th key={h} style={{
+                    padding: '10px 12px', whiteSpace: 'nowrap',
+                    textAlign: ['Pax','Costo','Venta','Ganancia','CM%'].includes(h) ? 'right' : 'left',
+                    color: 'var(--muted)', fontWeight: 500, fontSize: 11,
+                    borderBottom: '1px solid var(--border)',
+                  }}>{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((r, i) => {
+                const cm = r.venta > 0 ? r.ganancia / r.venta : 0
+                return (
+                  <tr key={r.file_code} style={{
+                    borderBottom: '1px solid var(--border)',
+                    background: i % 2 === 0 ? 'transparent' : 'rgba(255,255,255,0.01)',
+                  }}>
+                    <td style={{ padding: '8px 12px', fontFamily: 'var(--font-mono)', color: 'var(--teal-400)', fontSize: 11, whiteSpace: 'nowrap' }}>{r.file_code}</td>
+                    <td style={{ padding: '8px 12px', color: 'var(--muted)', whiteSpace: 'nowrap' }}>{fmtDate(r.fecha_in)}</td>
+                    <td style={{ padding: '8px 12px', color: 'var(--muted)', whiteSpace: 'nowrap' }}>{fmtDate(r.fecha_out)}</td>
+                    <td style={{ padding: '8px 12px', whiteSpace: 'nowrap' }}>
+                      <span style={{ fontSize: 10, padding: '2px 6px', borderRadius: 4, background: 'rgba(255,255,255,0.06)', color: 'var(--text-dim)' }}>{r.estado}</span>
+                    </td>
+                    <td style={{ padding: '8px 12px', color: 'var(--text)', maxWidth: 180, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.cliente ?? '—'}</td>
+                    <td style={{ padding: '8px 12px', color: 'var(--muted)', whiteSpace: 'nowrap' }}>{r.booking_department ?? '—'}</td>
+                    <td style={{ padding: '8px 12px', color: 'var(--text)', whiteSpace: 'nowrap' }}>{r.vendedor ?? '—'}</td>
+                    <td style={{ padding: '8px 12px', textAlign: 'right', fontFamily: 'var(--font-mono)', color: 'var(--muted)' }}>{r.cant_pax ?? '—'}</td>
+                    <td style={{ padding: '8px 12px', textAlign: 'right', fontFamily: 'var(--font-mono)', color: 'var(--muted)' }}>{formatUSD(r.costo)}</td>
+                    <td style={{ padding: '8px 12px', textAlign: 'right', fontFamily: 'var(--font-mono)', color: 'var(--text)' }}>{formatUSD(r.venta)}</td>
+                    <td style={{ padding: '8px 12px', textAlign: 'right', fontFamily: 'var(--font-mono)', color: r.ganancia < 0 ? '#f87171' : '#4ade80', fontWeight: 500 }}>{formatUSD(r.ganancia)}</td>
+                    <td style={{ padding: '8px 12px', textAlign: 'right', fontFamily: 'var(--font-mono)', fontWeight: 600, color: cmColor(cm) }}>{(cm * 100).toFixed(1)}%</td>
+                  </tr>
+                )
+              })}
+            </tbody>
+            <tfoot style={{ position: 'sticky', bottom: 0 }}>
+              <tr style={{ background: 'var(--surface2)', borderTop: '2px solid var(--border)' }}>
+                <td colSpan={8} style={{ padding: '10px 12px', fontWeight: 700, color: 'var(--text)', fontSize: 12 }}>TOTAL — {rows.length} files</td>
+                <td style={{ padding: '10px 12px', textAlign: 'right', fontFamily: 'var(--font-mono)', fontWeight: 700, color: 'var(--text)' }}>{formatUSD(totalCosto)}</td>
+                <td style={{ padding: '10px 12px', textAlign: 'right', fontFamily: 'var(--font-mono)', fontWeight: 700, color: 'var(--text)' }}>{formatUSD(totalVenta)}</td>
+                <td style={{ padding: '10px 12px', textAlign: 'right', fontFamily: 'var(--font-mono)', fontWeight: 700, color: '#4ade80' }}>{formatUSD(totalGan)}</td>
+                <td style={{ padding: '10px 12px', textAlign: 'right', fontFamily: 'var(--font-mono)', fontWeight: 700, color: cmColor(totalCM) }}>{(totalCM * 100).toFixed(1)}%</td>
+              </tr>
+            </tfoot>
+          </table>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ── Main component ───────────────────────────────────────────────────────────
 export default function AreaDetalleClient({
   area, temp, rows, filename, isAdmin,
 }: {
-  area: string
-  temp: string
-  rows: Row[]
-  filename: string
-  isAdmin: boolean
+  area: string; temp: string; rows: Row[]; filename: string; isAdmin: boolean
 }) {
   const router = useRouter()
   const [tab, setTab] = useState<Tab>('resumen')
+  const [drill, setDrill] = useState<DrillFilter | null>(null)
 
-  // ── KPIs ────────────────────────────────────────────────────────────────
+  const cmColor = (cm: number) => cm >= 0.25 ? '#4ade80' : cm >= 0.18 ? '#fb923c' : '#f87171'
+
+  // Files para el modal según el filtro activo
+  const drillRows = useMemo(() => {
+    if (!drill) return []
+    return rows.filter(r => {
+      if (drill.tipo === 'mes')           return mesKey(r.fecha_in) === drill.valor
+      if (drill.tipo === 'vendedor')      return (r.vendedor || 'Sin asignar') === drill.valor
+      if (drill.tipo === 'operador')      return (r.operador && r.operador !== 'Unassigned' ? r.operador : 'Sin asignar') === drill.valor
+      if (drill.tipo === 'cliente')       return (r.cliente || 'Sin cliente') === drill.valor
+      if (drill.tipo === 'departamento')  return (r.booking_department || 'Sin departamento') === drill.valor
+      return false
+    })
+  }, [drill, rows])
+
+  // ── KPIs ──────────────────────────────────────────────────────────────────
   const kpis = useMemo(() => {
     const viajes   = new Set(rows.map(r => r.file_code)).size
     const pax      = rows.reduce((s, r) => s + (r.cant_pax ?? 0), 0)
@@ -65,85 +190,57 @@ export default function AreaDetalleClient({
     return { viajes, pax, dias, venta, costo, ganancia, cm }
   }, [rows])
 
-  // ── Por mes ──────────────────────────────────────────────────────────────
+  // ── Agrupaciones ─────────────────────────────────────────────────────────
   const porMes = useMemo(() => {
     const map = new Map<string, { viajes: Set<string>; pax: number; venta: number; ganancia: number }>()
     rows.forEach(r => {
       const k = mesKey(r.fecha_in)
       if (!map.has(k)) map.set(k, { viajes: new Set(), pax: 0, venta: 0, ganancia: 0 })
       const m = map.get(k)!
-      m.viajes.add(r.file_code)
-      m.pax += r.cant_pax ?? 0
-      m.venta += r.venta
-      m.ganancia += r.ganancia
+      m.viajes.add(r.file_code); m.pax += r.cant_pax ?? 0; m.venta += r.venta; m.ganancia += r.ganancia
     })
-    return Array.from(map.entries())
-      .sort((a, b) => a[0].localeCompare(b[0]))
-      .map(([k, v]) => ({
-        key: k, label: mesLabel(k.length === 7 ? k + '-01' : null),
-        viajes: v.viajes.size, pax: v.pax, venta: v.venta, ganancia: v.ganancia,
-        cm: v.venta > 0 ? v.ganancia / v.venta : 0,
-      }))
+    return Array.from(map.entries()).sort((a, b) => a[0].localeCompare(b[0]))
+      .map(([k, v]) => ({ key: k, label: mesLabel(k + '-01'), viajes: v.viajes.size, pax: v.pax, venta: v.venta, ganancia: v.ganancia, cm: v.venta > 0 ? v.ganancia / v.venta : 0 }))
   }, [rows])
 
-  // ── Por vendedor ─────────────────────────────────────────────────────────
   const porVendedor = useMemo(() => {
     const map = new Map<string, { viajes: Set<string>; pax: number; venta: number; ganancia: number }>()
     rows.forEach(r => {
       const k = r.vendedor || 'Sin asignar'
       if (!map.has(k)) map.set(k, { viajes: new Set(), pax: 0, venta: 0, ganancia: 0 })
-      const m = map.get(k)!
-      m.viajes.add(r.file_code); m.pax += r.cant_pax ?? 0
-      m.venta += r.venta; m.ganancia += r.ganancia
+      const m = map.get(k)!; m.viajes.add(r.file_code); m.pax += r.cant_pax ?? 0; m.venta += r.venta; m.ganancia += r.ganancia
     })
-    return Array.from(map.entries())
-      .map(([nombre, v]) => ({ nombre, viajes: v.viajes.size, pax: v.pax, venta: v.venta, ganancia: v.ganancia, cm: v.venta > 0 ? v.ganancia / v.venta : 0 }))
-      .sort((a, b) => b.venta - a.venta)
+    return Array.from(map.entries()).map(([nombre, v]) => ({ nombre, viajes: v.viajes.size, pax: v.pax, venta: v.venta, ganancia: v.ganancia, cm: v.venta > 0 ? v.ganancia / v.venta : 0 })).sort((a, b) => b.venta - a.venta)
   }, [rows])
 
-  // ── Por operador ─────────────────────────────────────────────────────────
   const porOperador = useMemo(() => {
     const map = new Map<string, { viajes: Set<string>; pax: number; dias: number; venta: number; ganancia: number }>()
     rows.forEach(r => {
       const k = r.operador && r.operador !== 'Unassigned' ? r.operador : 'Sin asignar'
       if (!map.has(k)) map.set(k, { viajes: new Set(), pax: 0, dias: 0, venta: 0, ganancia: 0 })
-      const m = map.get(k)!
-      m.viajes.add(r.file_code); m.pax += r.cant_pax ?? 0
-      m.dias += r.cant_dias ?? 0; m.venta += r.venta; m.ganancia += r.ganancia
+      const m = map.get(k)!; m.viajes.add(r.file_code); m.pax += r.cant_pax ?? 0; m.dias += r.cant_dias ?? 0; m.venta += r.venta; m.ganancia += r.ganancia
     })
-    return Array.from(map.entries())
-      .map(([nombre, v]) => ({ nombre, viajes: v.viajes.size, pax: v.pax, dias: v.dias, venta: v.venta, ganancia: v.ganancia, cm: v.venta > 0 ? v.ganancia / v.venta : 0 }))
-      .sort((a, b) => b.viajes - a.viajes)
+    return Array.from(map.entries()).map(([nombre, v]) => ({ nombre, viajes: v.viajes.size, pax: v.pax, dias: v.dias, venta: v.venta, ganancia: v.ganancia, cm: v.venta > 0 ? v.ganancia / v.venta : 0 })).sort((a, b) => b.viajes - a.viajes)
   }, [rows])
 
-  // ── Por cliente ──────────────────────────────────────────────────────────
   const porCliente = useMemo(() => {
     const map = new Map<string, { viajes: Set<string>; pax: number; venta: number; ganancia: number }>()
     rows.forEach(r => {
       const k = r.cliente || 'Sin cliente'
       if (!map.has(k)) map.set(k, { viajes: new Set(), pax: 0, venta: 0, ganancia: 0 })
-      const m = map.get(k)!
-      m.viajes.add(r.file_code); m.pax += r.cant_pax ?? 0
-      m.venta += r.venta; m.ganancia += r.ganancia
+      const m = map.get(k)!; m.viajes.add(r.file_code); m.pax += r.cant_pax ?? 0; m.venta += r.venta; m.ganancia += r.ganancia
     })
-    return Array.from(map.entries())
-      .map(([nombre, v]) => ({ nombre, viajes: v.viajes.size, pax: v.pax, venta: v.venta, ganancia: v.ganancia, cm: v.venta > 0 ? v.ganancia / v.venta : 0 }))
-      .sort((a, b) => b.venta - a.venta)
+    return Array.from(map.entries()).map(([nombre, v]) => ({ nombre, viajes: v.viajes.size, pax: v.pax, venta: v.venta, ganancia: v.ganancia, cm: v.venta > 0 ? v.ganancia / v.venta : 0 })).sort((a, b) => b.venta - a.venta)
   }, [rows])
 
-  // ── Por departamento ─────────────────────────────────────────────────────
   const porDepto = useMemo(() => {
     const map = new Map<string, { viajes: Set<string>; pax: number; venta: number; ganancia: number }>()
     rows.forEach(r => {
       const k = r.booking_department || 'Sin departamento'
       if (!map.has(k)) map.set(k, { viajes: new Set(), pax: 0, venta: 0, ganancia: 0 })
-      const m = map.get(k)!
-      m.viajes.add(r.file_code); m.pax += r.cant_pax ?? 0
-      m.venta += r.venta; m.ganancia += r.ganancia
+      const m = map.get(k)!; m.viajes.add(r.file_code); m.pax += r.cant_pax ?? 0; m.venta += r.venta; m.ganancia += r.ganancia
     })
-    return Array.from(map.entries())
-      .map(([nombre, v]) => ({ nombre, viajes: v.viajes.size, pax: v.pax, venta: v.venta, ganancia: v.ganancia, cm: v.venta > 0 ? v.ganancia / v.venta : 0 }))
-      .sort((a, b) => b.venta - a.venta)
+    return Array.from(map.entries()).map(([nombre, v]) => ({ nombre, viajes: v.viajes.size, pax: v.pax, venta: v.venta, ganancia: v.ganancia, cm: v.venta > 0 ? v.ganancia / v.venta : 0 })).sort((a, b) => b.venta - a.venta)
   }, [rows])
 
   const maxMesVenta = Math.max(...porMes.map(m => m.venta), 1)
@@ -157,26 +254,45 @@ export default function AreaDetalleClient({
     { id: 'departamentos', label: 'Departamentos',  icon: <Building2 size={13} /> },
   ]
 
-  const cmColor = (cm: number) => cm >= 0.25 ? '#4ade80' : cm >= 0.18 ? '#fb923c' : '#f87171'
+  // Función para fila clickeable
+  function ClickRow({ children, tipo, valor, style }: { children: React.ReactNode; tipo: string; valor: string; style?: React.CSSProperties }) {
+    return (
+      <tr
+        onClick={() => setDrill({ tipo, valor })}
+        style={{ cursor: 'pointer', transition: 'background 0.1s', ...style }}
+        onMouseEnter={e => (e.currentTarget as HTMLTableRowElement).style.background = 'rgba(20,184,166,0.06)'}
+        onMouseLeave={e => (e.currentTarget as HTMLTableRowElement).style.background = style?.background?.toString() ?? 'transparent'}
+      >
+        {children}
+      </tr>
+    )
+  }
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
+
+      {/* Modal */}
+      {drill && (
+        <FilesModal
+          titulo={`${drill.tipo.charAt(0).toUpperCase() + drill.tipo.slice(1)}: ${drill.valor}`}
+          rows={drillRows}
+          onClose={() => setDrill(null)}
+        />
+      )}
 
       {/* Header */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: 12 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
           <button onClick={() => router.back()} style={{
-            background: 'var(--surface2)', border: '1px solid var(--border)',
-            borderRadius: 8, padding: '6px 10px', cursor: 'pointer', color: 'var(--muted)',
+            background: 'var(--surface2)', border: '1px solid var(--border)', borderRadius: 8,
+            padding: '6px 10px', cursor: 'pointer', color: 'var(--muted)',
             display: 'flex', alignItems: 'center', gap: 4, fontSize: 12,
           }}>
             <ArrowLeft size={13} /> Volver
           </button>
           <div>
             <h1 style={{ fontSize: 22, fontWeight: 600, color: 'var(--text)', margin: 0 }}>{area}</h1>
-            <p style={{ color: 'var(--muted)', fontSize: 13, marginTop: 2 }}>
-              Temporada {temp} · {filename}
-            </p>
+            <p style={{ color: 'var(--muted)', fontSize: 13, marginTop: 2 }}>Temporada {temp} · {filename}</p>
           </div>
         </div>
         <div style={{ display: 'flex', gap: 6 }}>
@@ -209,16 +325,14 @@ export default function AreaDetalleClient({
       </div>
 
       {/* Tabs */}
-      <div style={{ display: 'flex', gap: 4, borderBottom: '1px solid var(--border)', paddingBottom: 0, flexWrap: 'wrap' }}>
+      <div style={{ display: 'flex', gap: 4, borderBottom: '1px solid var(--border)', flexWrap: 'wrap' }}>
         {TABS.map(t => (
           <button key={t.id} onClick={() => setTab(t.id)} style={{
-            display: 'flex', alignItems: 'center', gap: 5,
-            padding: '8px 14px', fontSize: 13, fontWeight: 500,
-            cursor: 'pointer', border: 'none', borderRadius: '8px 8px 0 0',
-            background: tab === t.id ? 'var(--surface2)' : 'transparent',
+            display: 'flex', alignItems: 'center', gap: 5, padding: '8px 14px',
+            fontSize: 13, fontWeight: 500, cursor: 'pointer', border: 'none',
+            borderRadius: '8px 8px 0 0', background: tab === t.id ? 'var(--surface2)' : 'transparent',
             color: tab === t.id ? 'var(--text)' : 'var(--muted)',
             borderBottom: tab === t.id ? '2px solid var(--teal-500)' : '2px solid transparent',
-            transition: 'all 0.15s',
           }}>
             {t.icon}{t.label}
           </button>
@@ -252,7 +366,12 @@ export default function AreaDetalleClient({
           <div className="card" style={{ padding: '20px 24px' }}>
             <h3 style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)', marginBottom: 16 }}>Top vendedores</h3>
             {porVendedor.slice(0, 6).map((v, i) => (
-              <div key={v.nombre} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '7px 0', borderBottom: '1px solid var(--border)' }}>
+              <div key={v.nombre}
+                onClick={() => setDrill({ tipo: 'vendedor', valor: v.nombre })}
+                style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '7px 0', borderBottom: '1px solid var(--border)', cursor: 'pointer' }}
+                onMouseEnter={e => (e.currentTarget as HTMLDivElement).style.background = 'rgba(20,184,166,0.05)'}
+                onMouseLeave={e => (e.currentTarget as HTMLDivElement).style.background = 'transparent'}
+              >
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                   <span style={{ fontSize: 11, color: 'var(--muted)', fontFamily: 'var(--font-mono)', width: 16 }}>{i+1}</span>
                   <span style={{ fontSize: 13, color: 'var(--text)' }}>{v.nombre}</span>
@@ -272,6 +391,7 @@ export default function AreaDetalleClient({
         <div className="card" style={{ overflow: 'hidden' }}>
           <div style={{ padding: '14px 20px', borderBottom: '1px solid var(--border)' }}>
             <span style={{ fontSize: 14, fontWeight: 600, color: 'var(--text)' }}>Evolución mensual</span>
+            <span style={{ fontSize: 12, color: 'var(--muted)', marginLeft: 8 }}>· click en una fila para ver los files</span>
           </div>
           <div style={{ overflowX: 'auto' }}>
             <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
@@ -284,7 +404,7 @@ export default function AreaDetalleClient({
               </thead>
               <tbody>
                 {porMes.map((m, i) => (
-                  <tr key={m.key} style={{ borderTop: '1px solid var(--border)', background: i % 2 === 0 ? 'transparent' : 'rgba(255,255,255,0.01)' }}>
+                  <ClickRow key={m.key} tipo="mes" valor={m.key} style={{ borderTop: '1px solid var(--border)', background: i % 2 === 0 ? 'transparent' : 'rgba(255,255,255,0.01)' }}>
                     <td style={{ padding: '10px 16px', color: 'var(--text)', fontWeight: 500 }}>{m.label}</td>
                     <td style={{ padding: '10px 16px', textAlign: 'right', fontFamily: 'var(--font-mono)', color: 'var(--text)' }}>{m.viajes}</td>
                     <td style={{ padding: '10px 16px', textAlign: 'right', fontFamily: 'var(--font-mono)', color: 'var(--muted)' }}>{m.pax}</td>
@@ -296,7 +416,7 @@ export default function AreaDetalleClient({
                         <div style={{ height: '100%', width: `${(m.venta / maxMesVenta) * 100}%`, background: 'var(--teal-600)', borderRadius: 2 }} />
                       </div>
                     </td>
-                  </tr>
+                  </ClickRow>
                 ))}
               </tbody>
             </table>
@@ -306,42 +426,57 @@ export default function AreaDetalleClient({
 
       {/* ── VENDEDORES ── */}
       {tab === 'vendedores' && (
-        <TablaGenerica
+        <TablaClickeable
           titulo="Facturación por vendedor"
+          hint="click en un vendedor para ver sus files"
           cols={['Vendedor','Viajes','Pax','Venta','Ganancia','CM %']}
-          rows={porVendedor.map((v, i) => [
-            <span key="n"><span style={{ color: 'var(--muted)', fontSize: 11, marginRight: 8, fontFamily: 'var(--font-mono)' }}>{i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : i+1}</span>{v.nombre}</span>,
-            v.viajes, v.pax, formatUSD(v.venta), formatUSD(v.ganancia),
-            <span key="cm" style={{ color: cmColor(v.cm), fontWeight: 600 }}>{(v.cm*100).toFixed(1)}%</span>,
-          ])}
+          rows={porVendedor.map((v, i) => ({
+            tipo: 'vendedor', valor: v.nombre,
+            cells: [
+              <span key="n"><span style={{ color: 'var(--muted)', fontSize: 11, marginRight: 8 }}>{i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : i+1}</span>{v.nombre}</span>,
+              v.viajes, v.pax, formatUSD(v.venta), formatUSD(v.ganancia),
+              <span key="cm" style={{ color: cmColor(v.cm), fontWeight: 600 }}>{(v.cm*100).toFixed(1)}%</span>,
+            ]
+          }))}
           totals={['TOTAL', kpis.viajes, kpis.pax, formatUSD(kpis.venta), formatUSD(kpis.ganancia), (kpis.cm*100).toFixed(1)+'%']}
+          onDrill={setDrill}
         />
       )}
 
       {/* ── OPERADORES ── */}
       {tab === 'operadores' && (
-        <TablaGenerica
+        <TablaClickeable
           titulo="Viajes por operador"
+          hint="click en un operador para ver sus files"
           cols={['Operador','Viajes','Pax','Días','Venta','Ganancia','CM %']}
-          rows={porOperador.map((o, i) => [
-            <span key="n"><span style={{ color: 'var(--muted)', fontSize: 11, marginRight: 8, fontFamily: 'var(--font-mono)' }}>{i+1}</span>{o.nombre}</span>,
-            o.viajes, o.pax, o.dias, formatUSD(o.venta), formatUSD(o.ganancia),
-            <span key="cm" style={{ color: cmColor(o.cm), fontWeight: 600 }}>{(o.cm*100).toFixed(1)}%</span>,
-          ])}
+          rows={porOperador.map((o, i) => ({
+            tipo: 'operador', valor: o.nombre,
+            cells: [
+              <span key="n"><span style={{ color: 'var(--muted)', fontSize: 11, marginRight: 8 }}>{i+1}</span>{o.nombre}</span>,
+              o.viajes, o.pax, o.dias, formatUSD(o.venta), formatUSD(o.ganancia),
+              <span key="cm" style={{ color: cmColor(o.cm), fontWeight: 600 }}>{(o.cm*100).toFixed(1)}%</span>,
+            ]
+          }))}
+          onDrill={setDrill}
         />
       )}
 
       {/* ── CLIENTES ── */}
       {tab === 'clientes' && (
-        <TablaGenerica
+        <TablaClickeable
           titulo="Reporte por cliente"
+          hint="click en un cliente para ver sus files"
           cols={['Cliente','Viajes','Pax','Venta','Ganancia','CM %']}
-          rows={porCliente.map((c, i) => [
-            <span key="n"><span style={{ color: 'var(--muted)', fontSize: 11, marginRight: 8, fontFamily: 'var(--font-mono)' }}>{i+1}</span>{c.nombre}</span>,
-            c.viajes, c.pax, formatUSD(c.venta), formatUSD(c.ganancia),
-            <span key="cm" style={{ color: cmColor(c.cm), fontWeight: 600 }}>{(c.cm*100).toFixed(1)}%</span>,
-          ])}
+          rows={porCliente.map((c, i) => ({
+            tipo: 'cliente', valor: c.nombre,
+            cells: [
+              <span key="n"><span style={{ color: 'var(--muted)', fontSize: 11, marginRight: 8 }}>{i+1}</span>{c.nombre}</span>,
+              c.viajes, c.pax, formatUSD(c.venta), formatUSD(c.ganancia),
+              <span key="cm" style={{ color: cmColor(c.cm), fontWeight: 600 }}>{(c.cm*100).toFixed(1)}%</span>,
+            ]
+          }))}
           totals={['TOTAL', kpis.viajes, kpis.pax, formatUSD(kpis.venta), formatUSD(kpis.ganancia), (kpis.cm*100).toFixed(1)+'%']}
+          onDrill={setDrill}
         />
       )}
 
@@ -349,7 +484,13 @@ export default function AreaDetalleClient({
       {tab === 'departamentos' && (
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: 12 }}>
           {porDepto.map(d => (
-            <div key={d.nombre} className="card" style={{ padding: '16px 20px' }}>
+            <div key={d.nombre}
+              onClick={() => setDrill({ tipo: 'departamento', valor: d.nombre })}
+              className="card"
+              style={{ padding: '16px 20px', cursor: 'pointer', transition: 'border-color 0.15s' }}
+              onMouseEnter={e => (e.currentTarget as HTMLDivElement).style.borderColor = 'var(--teal-600)'}
+              onMouseLeave={e => (e.currentTarget as HTMLDivElement).style.borderColor = 'var(--border)'}
+            >
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
                 <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)' }}>{d.nombre}</span>
                 <span style={{ fontSize: 11, color: 'var(--muted)' }}>{d.viajes} viajes · {d.pax} pax</span>
@@ -377,17 +518,21 @@ export default function AreaDetalleClient({
   )
 }
 
-function TablaGenerica({ titulo, cols, rows, totals }: {
+// ── TablaClickeable ───────────────────────────────────────────────────────────
+function TablaClickeable({ titulo, hint, cols, rows, totals, onDrill }: {
   titulo: string
+  hint?: string
   cols: string[]
-  rows: React.ReactNode[][]
+  rows: { tipo: string; valor: string; cells: React.ReactNode[] }[]
   totals?: React.ReactNode[]
+  onDrill: (f: DrillFilter) => void
 }) {
   const alignRight = (h: string) => !['Vendedor','Operador','Cliente','Departamento'].includes(h)
   return (
     <div className="card" style={{ overflow: 'hidden' }}>
-      <div style={{ padding: '14px 20px', borderBottom: '1px solid var(--border)' }}>
+      <div style={{ padding: '14px 20px', borderBottom: '1px solid var(--border)', display: 'flex', gap: 8, alignItems: 'center' }}>
         <span style={{ fontSize: 14, fontWeight: 600, color: 'var(--text)' }}>{titulo}</span>
+        {hint && <span style={{ fontSize: 12, color: 'var(--muted)' }}>· {hint}</span>}
       </div>
       <div style={{ overflowX: 'auto' }}>
         <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
@@ -400,11 +545,14 @@ function TablaGenerica({ titulo, cols, rows, totals }: {
           </thead>
           <tbody>
             {rows.map((row, i) => (
-              <tr key={i} style={{ borderTop: '1px solid var(--border)', background: i % 2 === 0 ? 'transparent' : 'rgba(255,255,255,0.01)' }}>
-                {row.map((cell, j) => (
-                  <td key={j} style={{ padding: '10px 16px', textAlign: alignRight(cols[j]) ? 'right' : 'left', color: 'var(--text)', fontFamily: j > 0 ? 'var(--font-mono)' : undefined }}>
-                    {cell}
-                  </td>
+              <tr key={i}
+                onClick={() => onDrill({ tipo: row.tipo, valor: row.valor })}
+                style={{ borderTop: '1px solid var(--border)', cursor: 'pointer', background: i % 2 === 0 ? 'transparent' : 'rgba(255,255,255,0.01)' }}
+                onMouseEnter={e => (e.currentTarget as HTMLTableRowElement).style.background = 'rgba(20,184,166,0.06)'}
+                onMouseLeave={e => (e.currentTarget as HTMLTableRowElement).style.background = i % 2 === 0 ? 'transparent' : 'rgba(255,255,255,0.01)'}
+              >
+                {row.cells.map((cell, j) => (
+                  <td key={j} style={{ padding: '10px 16px', textAlign: alignRight(cols[j]) ? 'right' : 'left', color: 'var(--text)', fontFamily: j > 0 ? 'var(--font-mono)' : undefined }}>{cell}</td>
                 ))}
               </tr>
             ))}
@@ -413,9 +561,7 @@ function TablaGenerica({ titulo, cols, rows, totals }: {
             <tfoot>
               <tr style={{ borderTop: '2px solid var(--border)', background: 'var(--surface2)' }}>
                 {totals.map((cell, j) => (
-                  <td key={j} style={{ padding: '10px 16px', textAlign: alignRight(cols[j]) ? 'right' : 'left', fontWeight: 700, color: 'var(--text)', fontFamily: j > 0 ? 'var(--font-mono)' : undefined }}>
-                    {cell}
-                  </td>
+                  <td key={j} style={{ padding: '10px 16px', textAlign: alignRight(cols[j]) ? 'right' : 'left', fontWeight: 700, color: 'var(--text)', fontFamily: j > 0 ? 'var(--font-mono)' : undefined }}>{cell}</td>
                 ))}
               </tr>
             </tfoot>

@@ -1,19 +1,29 @@
 'use client'
 
 import { useState, useCallback } from 'react'
-import { Upload, FileSpreadsheet, CheckCircle2, AlertCircle, Loader2, Info } from 'lucide-react'
+import { Upload, FileSpreadsheet, CheckCircle2, AlertCircle, Loader2, RefreshCw } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
+
+type Step = 'idle' | 'uploading-storage' | 'processing' | 'done'
 
 interface UploadResult {
   success: boolean
   message?: string
   error?: string
   row_count?: { team_leader: number; salesforce: number; audit: number; temp2425: number }
+  rows?: number
 }
 
-type Step = 'idle' | 'uploading-storage' | 'processing' | 'done'
-
-export default function SubirPage() {
+function UploadZone({
+  label, sublabel, accept, apiRoute, steps, resultLabels,
+}: {
+  label: string
+  sublabel: string
+  accept: string
+  apiRoute: string
+  steps: string[]
+  resultLabels?: (r: UploadResult) => { label: string; val: number }[]
+}) {
   const [dragging, setDragging] = useState(false)
   const [file, setFile] = useState<File | null>(null)
   const [step, setStep] = useState<Step>('idle')
@@ -35,41 +45,31 @@ export default function SubirPage() {
     if (f) handleFile(f)
   }, [handleFile])
 
+  const uploading = step === 'uploading-storage' || step === 'processing'
+
   async function handleUpload() {
     if (!file) return
     setStep('uploading-storage')
     setResult(null)
-
     try {
       const supabase = createClient()
       const { data: { session } } = await supabase.auth.getSession()
-      if (!session) throw new Error('Sesión expirada, volvé a loguearte')
+      if (!session) throw new Error('Sesión expirada')
 
-      // 1. Subir archivo directo a Supabase Storage (sin pasar por Vercel)
       const storagePath = `uploads/${Date.now()}_${file.name}`
       const { error: storageErr } = await supabase.storage
-        .from('excel-uploads')
-        .upload(storagePath, file, { upsert: true })
+        .from('excel-uploads').upload(storagePath, file, { upsert: true })
+      if (storageErr) throw new Error(`Error subiendo: ${storageErr.message}`)
 
-      if (storageErr) throw new Error(`Error subiendo archivo: ${storageErr.message}`)
-
-      // 2. Decirle a la API que procese el archivo desde Storage
       setStep('processing')
-      const res = await fetch('/api/upload', {
+      const res = await fetch(apiRoute, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          authorization: `Bearer ${session.access_token}`,
-        },
+        headers: { 'Content-Type': 'application/json', authorization: `Bearer ${session.access_token}` },
         body: JSON.stringify({ storagePath, filename: file.name }),
       })
-
       const data = await res.json()
       setResult(data)
-
-      // 3. Borrar el archivo de Storage (ya procesado)
       await supabase.storage.from('excel-uploads').remove([storagePath])
-
     } catch (err: unknown) {
       setResult({ success: false, error: err instanceof Error ? err.message : 'Error desconocido' })
     } finally {
@@ -77,131 +77,135 @@ export default function SubirPage() {
     }
   }
 
-  const uploading = step === 'uploading-storage' || step === 'processing'
-
   return (
-    <div style={{ maxWidth: 640, margin: '0 auto' }}>
-      <div style={{ marginBottom: 32 }}>
-        <h1 style={{ fontSize: 24, fontWeight: 600, color: 'var(--text)', margin: 0 }}>Subir Excel</h1>
-        <p style={{ color: 'var(--muted)', marginTop: 6, fontSize: 14 }}>
-          Subí el archivo .xlsm actualizado y el dashboard se actualiza automáticamente.
-        </p>
-      </div>
-
-      <div style={{
-        background: 'rgba(13, 148, 136, 0.08)', border: '1px solid rgba(13, 148, 136, 0.25)',
-        borderRadius: 10, padding: '12px 16px', marginBottom: 24,
-        display: 'flex', gap: 10, alignItems: 'flex-start',
-      }}>
-        <Info size={16} style={{ color: 'var(--teal-400)', marginTop: 1, flexShrink: 0 }} />
-        <div style={{ fontSize: 13, color: 'var(--text-dim)', lineHeight: 1.6 }}>
-          <strong style={{ color: 'var(--text)' }}>¿Qué se procesa?</strong>{' '}
-          Reporte Team Leader · Files B2C SaleForce · Bookings Audit · Temp 24/25.<br />
-          Los datos anteriores se <strong style={{ color: 'var(--text)' }}>reemplazan completamente</strong> con cada subida.
-        </div>
-      </div>
+    <div className="card" style={{ padding: '24px' }}>
+      <h2 style={{ fontSize: 16, fontWeight: 600, color: 'var(--text)', margin: '0 0 6px' }}>{label}</h2>
+      <p style={{ fontSize: 13, color: 'var(--muted)', marginBottom: 20 }}>{sublabel}</p>
 
       <div
         onDragOver={e => { e.preventDefault(); setDragging(true) }}
         onDragLeave={() => setDragging(false)}
         onDrop={handleDrop}
-        onClick={() => !uploading && document.getElementById('file-input')?.click()}
+        onClick={() => !uploading && document.getElementById(`file-input-${apiRoute}`)?.click()}
         style={{
           border: `2px dashed ${dragging ? 'var(--teal-500)' : file ? 'var(--teal-700)' : 'var(--border)'}`,
-          borderRadius: 14, padding: '48px 24px', textAlign: 'center',
+          borderRadius: 12, padding: '32px 24px', textAlign: 'center',
           cursor: uploading ? 'not-allowed' : 'pointer',
-          background: dragging ? 'rgba(20, 184, 166, 0.05)' : file ? 'rgba(20, 184, 166, 0.03)' : 'var(--surface)',
+          background: dragging ? 'rgba(20,184,166,0.05)' : 'transparent',
           transition: 'all 0.2s', opacity: uploading ? 0.6 : 1,
         }}
       >
-        <input id="file-input" type="file" accept=".xlsx,.xlsm,.xls" style={{ display: 'none' }}
+        <input id={`file-input-${apiRoute}`} type="file" accept={accept} style={{ display: 'none' }}
           onChange={e => { const f = e.target.files?.[0]; if (f) handleFile(f) }} />
         {file ? (
           <>
-            <FileSpreadsheet size={40} style={{ color: 'var(--teal-400)', marginBottom: 12 }} />
-            <div style={{ fontSize: 15, fontWeight: 500, color: 'var(--text)', marginBottom: 4 }}>{file.name}</div>
-            <div style={{ fontSize: 13, color: 'var(--muted)' }}>{(file.size / 1024 / 1024).toFixed(2)} MB · Hacé click para cambiar</div>
+            <FileSpreadsheet size={32} style={{ color: 'var(--teal-400)', marginBottom: 8 }} />
+            <div style={{ fontSize: 14, fontWeight: 500, color: 'var(--text)', marginBottom: 2 }}>{file.name}</div>
+            <div style={{ fontSize: 12, color: 'var(--muted)' }}>{(file.size / 1024 / 1024).toFixed(2)} MB · Click para cambiar</div>
           </>
         ) : (
           <>
-            <Upload size={40} style={{ color: 'var(--muted)', marginBottom: 12 }} />
-            <div style={{ fontSize: 15, fontWeight: 500, color: 'var(--text)', marginBottom: 4 }}>Arrastrá el Excel acá</div>
-            <div style={{ fontSize: 13, color: 'var(--muted)' }}>o hacé click para seleccionar · .xlsx · .xlsm · .xls</div>
+            <Upload size={32} style={{ color: 'var(--muted)', marginBottom: 8 }} />
+            <div style={{ fontSize: 14, fontWeight: 500, color: 'var(--text)', marginBottom: 2 }}>Arrastrá el archivo acá</div>
+            <div style={{ fontSize: 12, color: 'var(--muted)' }}>o hacé click para seleccionar</div>
           </>
         )}
       </div>
 
       {file && !result?.success && (
         <button onClick={handleUpload} disabled={uploading} className="btn-primary"
-          style={{ width: '100%', justifyContent: 'center', marginTop: 16, padding: '12px 24px', fontSize: 15 }}>
+          style={{ width: '100%', justifyContent: 'center', marginTop: 12, padding: '11px 24px', fontSize: 14 }}>
           {uploading
-            ? <><Loader2 size={16} style={{ animation: 'spin 1s linear infinite' }} /> {step === 'uploading-storage' ? 'Subiendo archivo…' : 'Procesando datos…'}</>
-            : <><Upload size={16} /> Procesar y actualizar dashboard</>
+            ? <><Loader2 size={15} style={{ animation: 'spin 1s linear infinite' }} /> {step === 'uploading-storage' ? 'Subiendo...' : 'Procesando...'}</>
+            : <><Upload size={15} /> Procesar</>
           }
         </button>
       )}
 
       {uploading && (
-        <div style={{ marginTop: 16 }} className="card">
-          <div style={{ padding: '16px 20px' }}>
-            {[
-              { label: 'Subiendo archivo a storage', done: step === 'processing', active: step === 'uploading-storage' },
-              { label: 'Parseando Reporte Team Leader', done: false, active: step === 'processing' },
-              { label: 'Procesando Bookings Audit y SF', done: false, active: step === 'processing' },
-              { label: 'Actualizando base de datos', done: false, active: step === 'processing' },
-            ].map((s, i) => (
-              <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
-                {s.done
-                  ? <CheckCircle2 size={12} style={{ color: '#4ade80' }} />
-                  : <Loader2 size={12} style={{ color: s.active ? 'var(--teal-400)' : 'var(--muted)', animation: s.active ? 'spin 1s linear infinite' : 'none' }} />
-                }
-                <span style={{ fontSize: 13, color: s.active ? 'var(--text)' : s.done ? '#4ade80' : 'var(--muted)' }}>{s.label}</span>
-              </div>
-            ))}
-          </div>
+        <div style={{ marginTop: 12, background: 'var(--surface2)', borderRadius: 8, padding: '12px 16px' }}>
+          {steps.map((s, i) => (
+            <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: i < steps.length - 1 ? 6 : 0 }}>
+              <Loader2 size={11} style={{ color: 'var(--teal-400)', animation: 'spin 1s linear infinite' }} />
+              <span style={{ fontSize: 12, color: 'var(--muted)' }}>{s}</span>
+            </div>
+          ))}
         </div>
       )}
 
       {result && (
         <div style={{
-          marginTop: 16, borderRadius: 12, padding: '16px 20px',
-          border: `1px solid ${result.success ? 'rgba(74, 222, 128, 0.25)' : 'rgba(248, 113, 113, 0.25)'}`,
-          background: result.success ? 'rgba(20, 83, 45, 0.2)' : 'rgba(69, 10, 10, 0.2)',
+          marginTop: 12, borderRadius: 10, padding: '14px 16px',
+          border: `1px solid ${result.success ? 'rgba(74,222,128,0.25)' : 'rgba(248,113,113,0.25)'}`,
+          background: result.success ? 'rgba(20,83,45,0.2)' : 'rgba(69,10,10,0.2)',
         }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: result.success ? 12 : 0 }}>
-            {result.success ? <CheckCircle2 size={18} style={{ color: '#4ade80' }} /> : <AlertCircle size={18} style={{ color: '#f87171' }} />}
-            <span style={{ fontWeight: 500, fontSize: 14, color: result.success ? '#4ade80' : '#f87171' }}>
-              {result.success ? '¡Listo! Dashboard actualizado' : 'Error al procesar'}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            {result.success
+              ? <CheckCircle2 size={16} style={{ color: '#4ade80' }} />
+              : <AlertCircle size={16} style={{ color: '#f87171' }} />}
+            <span style={{ fontWeight: 500, fontSize: 13, color: result.success ? '#4ade80' : '#f87171' }}>
+              {result.success ? '¡Procesado correctamente!' : 'Error al procesar'}
             </span>
           </div>
-          {result.success && result.row_count && (
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 8, marginTop: 8 }}>
-              {[
-                { label: 'Team Leader', val: result.row_count.team_leader },
-                { label: 'Salesforce', val: result.row_count.salesforce },
-                { label: 'Audit', val: result.row_count.audit },
-                { label: 'Temp 24/25', val: result.row_count.temp2425 },
-              ].map(item => (
-                <div key={item.label} style={{ background: 'rgba(0,0,0,0.2)', borderRadius: 8, padding: '8px 12px' }}>
-                  <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 2 }}>{item.label}</div>
+          {result.success && resultLabels && (
+            <div style={{ display: 'flex', gap: 12, marginTop: 10, flexWrap: 'wrap' }}>
+              {resultLabels(result).map(item => (
+                <div key={item.label} style={{ background: 'rgba(0,0,0,0.2)', borderRadius: 6, padding: '6px 12px', textAlign: 'center' }}>
                   <div style={{ fontSize: 18, fontWeight: 600, color: '#4ade80', fontFamily: 'var(--font-mono)' }}>{item.val.toLocaleString()}</div>
-                  <div style={{ fontSize: 11, color: 'var(--muted)' }}>filas</div>
+                  <div style={{ fontSize: 11, color: 'var(--muted)' }}>{item.label}</div>
                 </div>
               ))}
             </div>
           )}
           {result.error && (
-            <div style={{ fontSize: 12, color: '#fca5a5', marginTop: 4, fontFamily: 'var(--font-mono)' }}>{result.error}</div>
+            <div style={{ fontSize: 11, color: '#fca5a5', marginTop: 6, fontFamily: 'var(--font-mono)' }}>{result.error}</div>
           )}
         </div>
       )}
 
       {result?.success && (
         <button onClick={() => { setFile(null); setResult(null); setStep('idle') }} className="btn-ghost"
-          style={{ width: '100%', justifyContent: 'center', marginTop: 12 }}>
-          Subir otro archivo
+          style={{ width: '100%', justifyContent: 'center', marginTop: 10, fontSize: 13 }}>
+          <RefreshCw size={13} /> Subir otro
         </button>
       )}
+    </div>
+  )
+}
+
+export default function SubirPage() {
+  return (
+    <div style={{ maxWidth: 680, margin: '0 auto' }}>
+      <div style={{ marginBottom: 28 }}>
+        <h1 style={{ fontSize: 22, fontWeight: 600, color: 'var(--text)', margin: 0 }}>Subir datos</h1>
+        <p style={{ color: 'var(--muted)', marginTop: 6, fontSize: 13 }}>
+          Los datos de TourPlan se sincronizan automáticamente. Usá estas opciones para cargas manuales.
+        </p>
+      </div>
+
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+        <UploadZone
+          label="Archivo Salesforce B2C"
+          sublabel="Subí el archivo con los datos de Salesforce para B2C. Se asocia al último sync de TourPlan."
+          accept=".xlsx,.xlsm,.xls"
+          apiRoute="/api/upload-salesforce"
+          steps={['Subiendo archivo...', 'Procesando Salesforce...', 'Actualizando base de datos...']}
+          resultLabels={r => [{ label: 'Files SF', val: r.rows ?? 0 }]}
+        />
+
+        <UploadZone
+          label="Excel completo (fallback)"
+          sublabel="Solo si TourPlan no está disponible. Reemplaza todos los datos con el Excel completo."
+          accept=".xlsx,.xlsm,.xls"
+          apiRoute="/api/upload"
+          steps={['Subiendo archivo...', 'Parseando Team Leader...', 'Procesando Audit y SF...', 'Actualizando base de datos...']}
+          resultLabels={r => r.row_count ? [
+            { label: 'Team Leader', val: r.row_count.team_leader },
+            { label: 'Salesforce', val: r.row_count.salesforce },
+            { label: 'Audit', val: r.row_count.audit },
+          ] : []}
+        />
+      </div>
 
       <style>{`@keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }`}</style>
     </div>

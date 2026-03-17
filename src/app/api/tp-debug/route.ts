@@ -21,62 +21,19 @@ export async function GET() {
   try {
     pool = await sql.connect(config)
 
-    const tl = await pool.request().query(`
-      SELECT TOP 1
-        DATEDIFF(DAY, BookingTravelDate, LastServiceDate) AS Cant_Dias, *
+    const sample = await pool.request().query(`
+      SELECT 
+        BookingReference,
+        BookingCostAmount, BookingCostBaseAmount, BookingCostTaxAmount, BookingCostTaxBaseAmount,
+        BookingSellAmount, BookingSellBaseAmount, BookingSellTaxAmount, BookingSellTaxBaseAmount,
+        BookingRetailAmount, BookingAgentAmount, BookingMarginAmount,
+        BookingCurrencyCode
       FROM vw_BookingHeaderReportData
-      WHERE BookingBranchCode IN ('WE','WI','PL','AL','DM','GR','BN')
+      WHERE BookingReference = 'ALFI115046'
     `)
 
-    const branches = await pool.request().query(`
-      SELECT DISTINCT
-        BookingBranchCode,
-        BookingBranchName,
-        LEFT(BookingReference, 4) AS prefijo,
-        count(*) AS cant
-      FROM vw_BookingHeaderReportData
-      WHERE BookingBranchCode IN ('WE','WI','PL','AL','DM','GR','BN')
-        AND BookingTravelDate >= '20250501'
-      GROUP BY BookingBranchCode, BookingBranchName, LEFT(BookingReference, 4)
-      ORDER BY BookingBranchCode, cant DESC
-    `)
+    return Response.json({ sampleAmounts: sample.recordset })
 
-    const audit = await pool.request().query(`
-      SELECT TOP 1
-        x.Reference, x.FULL_REFERENCE,
-        x.PrevBookingStatus AS PreviousStatus,
-        x.BOOKINGSTATUS AS NewStatus,
-        x.DateOfChange, x.ChangedBy,
-        x.TRAVELDATE, x.BRANCH, x.Analysis1, x.Analysis3, x.BookingStatus
-      FROM (
-        SELECT
-          bhd.REFERENCE AS Reference, bhd.FULL_REFERENCE, bud.BOOKINGSTATUS,
-          bud.lw_date AS DateOfChange, bud.USERNAME AS ChangedBy,
-          bhd.TRAVELDATE, bhd.BRANCH,
-          SA1.DESCRIPTION Analysis1, SA3.DESCRIPTION Analysis3,
-          LAG(bud.BOOKINGSTATUS) OVER (
-            PARTITION BY bhd.BHD_ID ORDER BY bud.DATECREATED
-          ) AS PrevBookingStatus
-        FROM [LA-SAYHUE_Audit].dbo.BUD AS bud
-        JOIN BHD ON BHD.BHD_ID = bud.BHD_ID
-        JOIN SA1 ON SA1.CODE = BHD.SALE1
-        JOIN SA3 ON SA3.CODE = BHD.SALE3
-      ) x
-      WHERE x.PrevBookingStatus IS NOT NULL
-        AND x.PrevBookingStatus <> x.BOOKINGSTATUS
-    `)
-
-    return Response.json({
-      teamLeader: {
-        columns: Object.keys(tl.recordset[0] ?? {}),
-        sample:  tl.recordset[0],
-      },
-      branches: branches.recordset,
-      bookingsAudit: {
-        columns: Object.keys(audit.recordset[0] ?? {}),
-        sample:  audit.recordset[0],
-      },
-    })
   } catch (err: any) {
     return Response.json({ error: err.message }, { status: 500 })
   } finally {

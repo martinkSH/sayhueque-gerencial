@@ -6,6 +6,8 @@ import { format } from 'date-fns'
 import { es } from 'date-fns/locale'
 import ExportLetiButton from '@/components/ExportLetiButton'
 import SyncTourplanButton from '@/components/SyncTourplanButton'
+import AreasPanel from '@/components/AreasPanel'
+import type { AreaStat } from '@/components/AreasPanel'
 
 export const dynamic = 'force-dynamic'
 
@@ -141,6 +143,12 @@ export default async function DashboardPage({
   const { data: gananciaNet2627Raw } = await supabase
     .rpc('get_ganancia_neta_por_area', { p_upload_id: uploadId, p_areas: p_areas, p_temporada: '26/27' })
 
+  // Stats completos por área (viajes + pax) para AreasPanel
+  const { data: areaStats2526Raw } = await supabase
+    .rpc('get_stats_por_area', { p_upload_id: uploadId, p_areas: p_areas, p_temporada: '25/26' })
+  const { data: areaStats2627Raw } = await supabase
+    .rpc('get_stats_por_area', { p_upload_id: uploadId, p_areas: p_areas, p_temporada: '26/27' })
+
   // Agrupar B2C — BRUTO
   const b2c = { venta: 0, ganancia: 0 }
   const otros: AreaRow[] = []
@@ -213,6 +221,29 @@ export default async function DashboardPage({
   const totalVentaNeta2627 = areasNetaSorted2627.reduce((s, r) => s + r.venta, 0)
   const totalGananciaNeta2627 = areasNetaSorted2627.reduce((s, r) => s + r.ganancia, 0)
   const totalCMNeta2627 = totalVentaNeta2627 > 0 ? totalGananciaNeta2627 / totalVentaNeta2627 : 0
+
+  // AreasPanel stats
+  type StatRow = { area: string; venta: number; ganancia: number; viajes: number; pax: number }
+  function buildAreaStats(raw: StatRow[] | null, temporada: string): AreaStat[] {
+    if (!raw || raw.length === 0) return []
+    const b2c = { venta: 0, ganancia: 0, viajes: 0, pax: 0 }
+    const otros: AreaStat[] = []
+    ;(raw as StatRow[]).forEach(r => {
+      if (B2C_AREAS.includes(r.area)) {
+        b2c.venta += r.venta; b2c.ganancia += r.ganancia
+        b2c.viajes += r.viajes; b2c.pax += r.pax
+      } else {
+        otros.push({ ...r, temporada })
+      }
+    })
+    const result: AreaStat[] = [
+      ...(b2c.venta > 0 ? [{ area: 'B2C (Web + Plataformas + Walk In)', ...b2c, temporada }] : []),
+      ...otros,
+    ].sort((a, b) => b.ganancia - a.ganancia)
+    return result
+  }
+  const areas2526Stats = buildAreaStats(areaStats2526Raw as StatRow[], '25/26')
+  const areas2627Stats = buildAreaStats(areaStats2627Raw as StatRow[], '26/27')
 
   const uploadDate = format(new Date(lastUpload.created_at), "d 'de' MMMM, HH:mm", { locale: es })
 
@@ -519,6 +550,11 @@ export default async function DashboardPage({
             </div>
           </div>
         </div>
+      )}
+
+      {/* Areas Panel */}
+      {areas2526Stats.length > 0 && (
+        <AreasPanel areas2526={areas2526Stats} areas2627={areas2627Stats} />
       )}
 
       {/* Quick links */}

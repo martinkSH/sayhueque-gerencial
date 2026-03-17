@@ -142,7 +142,6 @@ export async function fetchTourplanData(): Promise<{
       const venta    = Number(r.BookingRetailAmount)    || 0
       const costo    = Number(r.BookingCostAmount)      || 0
       const ganancia = Number(r.BookingMarginAmount)    || (venta - costo)
-      const ganancia = venta - costo
       const fechaIn  = toISO(r.BookingTravelDate)
       const fechaOut = toISO(r.LastServiceDate)
       const statusRaw = String(r.BookingStatus ?? '').trim()

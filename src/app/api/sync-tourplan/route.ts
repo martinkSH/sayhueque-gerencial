@@ -50,7 +50,7 @@ export async function POST(req: Request) {
     // Insertar audit rows
     if (audit.length > 0) {
       const auditRows = audit.map(r => ({ ...r, upload_id: uploadId }))
-      await batchUpsert(supabase, 'historial_estados', auditRows, 'upload_id,file_code,date_of_change')
+      await batchUpsert(supabase, 'bookings_audit_rows', auditRows, 'upload_id,file_code,date_of_change')
     }
 
     return NextResponse.json({ ok: true, fetchedAt, teamLeader: tlRows.length, audit: audit.length, uploadId })

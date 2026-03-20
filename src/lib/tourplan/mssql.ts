@@ -110,6 +110,7 @@ export interface TLRowTP {
 
 export interface AuditRowTP {
   file_code: string
+  booking_name: string | null  // ← AGREGADO
   fecha_in: string | null
   area: string | null
   previous_status: string | null
@@ -185,18 +186,28 @@ export async function fetchTourplanData(): Promise<{
     })
 
     // ── Bookings Audit ────────────────────────────────────────────────────
+    // ← MODIFICADO: Agregamos BookingName al SELECT
     const auditResult = await pool.request().query(`
       SELECT
-        x.FULL_REFERENCE, x.Analysis1,
+        x.FULL_REFERENCE, 
+        x.BookingName,
+        x.Analysis1,
         x.PrevBookingStatus AS PreviousStatus,
         x.BOOKINGSTATUS AS NewStatus,
-        x.DateOfChange, x.ChangedBy,
-        x.TRAVELDATE, x.BRANCH
+        x.DateOfChange, 
+        x.ChangedBy,
+        x.TRAVELDATE, 
+        x.BRANCH
       FROM (
         SELECT
-          bhd.REFERENCE, bhd.FULL_REFERENCE, bud.BOOKINGSTATUS,
-          bud.lw_date AS DateOfChange, bud.USERNAME AS ChangedBy,
-          bhd.TRAVELDATE, bhd.BRANCH,
+          bhd.REFERENCE, 
+          bhd.FULL_REFERENCE, 
+          bhd.NAME AS BookingName,
+          bud.BOOKINGSTATUS,
+          bud.lw_date AS DateOfChange, 
+          bud.USERNAME AS ChangedBy,
+          bhd.TRAVELDATE, 
+          bhd.BRANCH,
           SA1.DESCRIPTION Analysis1,
           LAG(bud.BOOKINGSTATUS) OVER (
             PARTITION BY bhd.BHD_ID ORDER BY bud.DATECREATED
@@ -216,6 +227,7 @@ export async function fetchTourplanData(): Promise<{
       const fechaIn = toISO(r.TRAVELDATE)
       return {
         file_code:       String(r.FULL_REFERENCE ?? '').trim(),
+        booking_name:    String(r.BookingName ?? '').trim() || null,  // ← AGREGADO
         fecha_in:        fechaIn,
         area:            areaFromFileCode(String(r.FULL_REFERENCE ?? '').trim()),
         previous_status: String(r.PreviousStatus ?? '').trim(),  // código raw: QU, OK, FI, etc.

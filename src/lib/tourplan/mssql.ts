@@ -120,6 +120,26 @@ export interface AuditRowTP {
   temporada: string | null
 }
 
+// Configuración de Craft (se carga dinámicamente desde Supabase)
+let craftConfig: { activa: boolean; vendedores: string[] } | null = null
+
+async function loadCraftConfig() {
+  if (craftConfig !== null) return craftConfig
+  try {
+    const { createClient } = require('@/lib/supabase/server')
+    const supabase = createClient()
+    const { data } = await supabase
+      .from('config_areas_virtuales')
+      .select('activa, vendedores')
+      .eq('area_nombre', 'Craft')
+      .single()
+    craftConfig = data ? { activa: data.activa, vendedores: data.vendedores } : { activa: false, vendedores: [] }
+  } catch {
+    craftConfig = { activa: false, vendedores: [] }
+  }
+  return craftConfig
+}
+
 export async function fetchTourplanData(): Promise<{
   teamLeader: TLRowTP[]
   audit: AuditRowTP[]
@@ -127,6 +147,9 @@ export async function fetchTourplanData(): Promise<{
 }> {
   let pool: any = null
   try {
+    // Cargar config de Craft
+    const craft = await loadCraftConfig()
+    
     pool = await sql.connect(config)
 
     // ── Team Leader ───────────────────────────────────────────────────────
@@ -162,17 +185,24 @@ export async function fetchTourplanData(): Promise<{
       const fechaOut = toISO(r.LastServiceDate)
       const statusRaw = String(r.BookingStatus ?? '').trim()
       const estado = ESTADO_MAP[statusRaw] ?? statusRaw
+      const vendedor = r.BookingConsultantName?.trim() || null
+
+      // Reclasificar a Craft si está activo y el vendedor está en la lista
+      let bookingBranch = BRANCH_MAP[String(r.BookingBranchCode ?? '').trim()] ?? r.BookingBranchName ?? null
+      if (craft.activa && vendedor && craft.vendedores.includes(vendedor)) {
+        bookingBranch = 'Craft'
+      }
 
       return {
         file_code:          String(r.BookingReference ?? '').trim(),
-        booking_branch:     BRANCH_MAP[String(r.BookingBranchCode ?? '').trim()] ?? r.BookingBranchName ?? null,
+        booking_branch:     bookingBranch,
         booking_department: r.BookingDepartmentName ?? null,
         estado,
         fecha_in:           fechaIn,
         fecha_out:          fechaOut,
         cant_pax:           Number(r.BookingPaxQty) || null,
         cant_dias:          Number(r.Cant_Dias) || null,
-        vendedor:           r.BookingConsultantName?.trim() || null,
+        vendedor:           vendedor,
         operador:           r.BookingAnalysis1Name?.trim() || null,
         cliente:            r.BookingAgentName?.trim() || null,
         costo,
@@ -225,15 +255,24 @@ export async function fetchTourplanData(): Promise<{
 
     const audit: AuditRowTP[] = auditResult.recordset.map((r: any) => {
       const fechaIn = toISO(r.TRAVELDATE)
+      const operador = r.Analysis1?.trim() || null
+      
+      // Reclasificar a Craft si está activo
+      // Nota: En audit no tenemos vendedor directo, usamos area del file_code
+      let area = areaFromFileCode(String(r.FULL_REFERENCE ?? '').trim())
+      
+      // Si queremos que audit también refleje Craft, necesitaríamos JOIN con team_leader
+      // Por ahora dejamos el área original en audit
+      
       return {
         file_code:       String(r.FULL_REFERENCE ?? '').trim(),
-        booking_name:    String(r.BookingName ?? '').trim() || null,  // ← AGREGADO
+        booking_name:    String(r.BookingName ?? '').trim() || null,
         fecha_in:        fechaIn,
-        area:            areaFromFileCode(String(r.FULL_REFERENCE ?? '').trim()),
+        area:            area,
         previous_status: String(r.PreviousStatus ?? '').trim(),  // código raw: QU, OK, FI, etc.
         new_status:      String(r.NewStatus ?? '').trim(),        // código raw
         date_of_change:  toISO(r.DateOfChange),
-        operador:        r.Analysis1?.trim() || null,
+        operador:        operador,
         temporada:       getTemporada(fechaIn),
       }
     })

@@ -121,7 +121,7 @@ export interface AuditRowTP {
 }
 
 // Configuración de Craft (se carga dinámicamente desde Supabase)
-let craftConfig: { activa: boolean; vendedores: string[] } | null = null
+let craftConfig: { activo: boolean; vendedores: string[] } | null = null
 
 async function loadCraftConfig() {
   if (craftConfig !== null) return craftConfig
@@ -129,13 +129,13 @@ async function loadCraftConfig() {
     const { createClient } = require('@/lib/supabase/server')
     const supabase = createClient()
     const { data } = await supabase
-      .from('config_areas_virtuales')
-      .select('activa, vendedores')
-      .eq('area_nombre', 'Craft')
+      .from('config_departamentos_virtuales')
+      .select('activo, vendedores')
+      .eq('departamento_nombre', 'Craft')
       .single()
-    craftConfig = data ? { activa: data.activa, vendedores: data.vendedores } : { activa: false, vendedores: [] }
+    craftConfig = data ? { activo: data.activo, vendedores: data.vendedores } : { activo: false, vendedores: [] }
   } catch {
-    craftConfig = { activa: false, vendedores: [] }
+    craftConfig = { activo: false, vendedores: [] }
   }
   return craftConfig
 }
@@ -187,16 +187,16 @@ export async function fetchTourplanData(): Promise<{
       const estado = ESTADO_MAP[statusRaw] ?? statusRaw
       const vendedor = r.BookingConsultantName?.trim() || null
 
-      // Reclasificar a Craft si está activo y el vendedor está en la lista
-      let bookingBranch = BRANCH_MAP[String(r.BookingBranchCode ?? '').trim()] ?? r.BookingBranchName ?? null
-      if (craft.activa && vendedor && craft.vendedores.includes(vendedor)) {
-        bookingBranch = 'Craft'
+      // Reclasificar departamento a Craft si está activo y el vendedor está en la lista
+      let bookingDepartment = r.BookingDepartmentName ?? null
+      if (craft.activo && vendedor && craft.vendedores.includes(vendedor)) {
+        bookingDepartment = 'Craft'
       }
 
       return {
         file_code:          String(r.BookingReference ?? '').trim(),
-        booking_branch:     bookingBranch,
-        booking_department: r.BookingDepartmentName ?? null,
+        booking_branch:     BRANCH_MAP[String(r.BookingBranchCode ?? '').trim()] ?? r.BookingBranchName ?? null,
+        booking_department: bookingDepartment,
         estado,
         fecha_in:           fechaIn,
         fecha_out:          fechaOut,

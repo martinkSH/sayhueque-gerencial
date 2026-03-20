@@ -100,6 +100,43 @@ export default async function DetalleCMPage({
     else offset += PAGE_SIZE
   }
 
+  // ═══════════════════════════════════════════════════════════════
+  // ← NUEVO: Traer booking_name desde bookings_audit_rows
+  // ═══════════════════════════════════════════════════════════════
+  const bookingNamesMap = new Map<string, string>()
+  const fileCodes = allRows.map(r => r.file_code)
+  
+  if (fileCodes.length > 0) {
+    // Traer todos los booking_name en batch, usando DISTINCT ON para obtener el más reciente
+    let nameOffset = 0
+    let nameFetching = true
+    
+    while (nameFetching) {
+      const { data: namesBatch } = await supabase
+        .from('bookings_audit_rows')
+        .select('file_code, booking_name')
+        .eq('upload_id', uploadId)
+        .not('booking_name', 'is', null)
+        .in('file_code', fileCodes)
+        .order('file_code')
+        .order('date_of_change', { ascending: false })
+        .range(nameOffset, nameOffset + PAGE_SIZE - 1)
+
+      if (!namesBatch || namesBatch.length === 0) break
+
+      // Para cada file_code, guardamos solo el primero (el más reciente por el ORDER BY)
+      namesBatch.forEach((r: { file_code: string; booking_name: string | null }) => {
+        if (r.booking_name && !bookingNamesMap.has(r.file_code)) {
+          bookingNamesMap.set(r.file_code, r.booking_name)
+        }
+      })
+
+      if (namesBatch.length < PAGE_SIZE) nameFetching = false
+      else nameOffset += PAGE_SIZE
+    }
+  }
+  // ═══════════════════════════════════════════════════════════════
+
   // Salesforce map para B2C — también paginado
   const sfMap = new Map<string, { venta: number; ganancia: number; costo: number }>()
   const b2cFileCodes = allRows.filter(r => r.is_b2c).map(r => r.file_code.toUpperCase())
@@ -142,8 +179,10 @@ export default async function DetalleCMPage({
       const ganancia_sf = hasSf ? sfData!.ganancia : null
       const venta_tp = hasSf ? (r.venta_tl ?? 0) : null
       const costo_sf = hasSf ? sfData!.costo : null
+      
       return {
         file_code: r.file_code,
+        booking_name: bookingNamesMap.get(r.file_code) ?? null, // ← AGREGADO
         area: r.booking_branch,
         vendedor: r.vendedor ?? '—',
         cliente: r.cliente ?? '—',

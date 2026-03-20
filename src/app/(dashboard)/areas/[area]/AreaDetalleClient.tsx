@@ -203,6 +203,31 @@ export default function AreaDetalleClient({
       .map(([k, v]) => ({ key: k, label: mesLabel(k + '-01'), viajes: v.viajes.size, pax: v.pax, venta: v.venta, ganancia: v.ganancia, cm: v.venta > 0 ? v.ganancia / v.venta : 0 }))
   }, [rows])
 
+  const porEstado = useMemo(() => {
+    const map = new Map<string, { viajes: Set<string>; pax: number; venta: number; costo: number; ganancia: number }>()
+    rows.forEach(r => {
+      const k = r.estado || 'Sin estado'
+      if (!map.has(k)) map.set(k, { viajes: new Set(), pax: 0, venta: 0, costo: 0, ganancia: 0 })
+      const m = map.get(k)!
+      m.viajes.add(r.file_code)
+      m.pax += r.cant_pax ?? 0
+      m.venta += r.venta
+      m.costo += r.costo
+      m.ganancia += r.ganancia
+    })
+    return Array.from(map.entries())
+      .map(([nombre, v]) => ({ 
+        nombre, 
+        viajes: v.viajes.size, 
+        pax: v.pax, 
+        venta: v.venta, 
+        costo: v.costo,
+        ganancia: v.ganancia, 
+        cm: v.venta > 0 ? v.ganancia / v.venta : 0 
+      }))
+      .sort((a, b) => b.venta - a.venta)
+  }, [rows])
+
   const porVendedor = useMemo(() => {
     const map = new Map<string, { viajes: Set<string>; pax: number; venta: number; ganancia: number }>()
     rows.forEach(r => {
@@ -341,47 +366,106 @@ export default function AreaDetalleClient({
 
       {/* ── RESUMEN ── */}
       {tab === 'resumen' && (
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
-          <div className="card" style={{ padding: '20px 24px' }}>
-            <h3 style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)', marginBottom: 16 }}>Resumen temporada</h3>
-            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
-              <tbody>
-                {[
-                  { label: 'Total viajes', val: kpis.viajes.toLocaleString() },
-                  { label: 'Total pax', val: kpis.pax.toLocaleString() },
-                  { label: 'Días operados', val: kpis.dias.toLocaleString() },
-                  { label: 'Venta total', val: formatUSD(kpis.venta), bold: true },
-                  { label: 'Costo total', val: formatUSD(kpis.costo) },
-                  { label: 'Ganancia', val: formatUSD(kpis.ganancia), bold: true, color: '#4ade80' },
-                  { label: 'CM %', val: (kpis.cm * 100).toFixed(2) + '%', bold: true, color: cmColor(kpis.cm) },
-                ].map(row => (
-                  <tr key={row.label} style={{ borderBottom: '1px solid var(--border)' }}>
-                    <td style={{ padding: '9px 0', color: 'var(--muted)' }}>{row.label}</td>
-                    <td style={{ padding: '9px 0', textAlign: 'right', fontFamily: 'var(--font-mono)', fontWeight: row.bold ? 700 : 400, color: row.color ?? 'var(--text)' }}>{row.val}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+          {/* Primera fila: Stats + Top Vendedores */}
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
+            <div className="card" style={{ padding: '20px 24px' }}>
+              <h3 style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)', marginBottom: 16 }}>Resumen temporada</h3>
+              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+                <tbody>
+                  {[
+                    { label: 'Total viajes', val: kpis.viajes.toLocaleString() },
+                    { label: 'Total pax', val: kpis.pax.toLocaleString() },
+                    { label: 'Días operados', val: kpis.dias.toLocaleString() },
+                    { label: 'Venta total', val: formatUSD(kpis.venta), bold: true },
+                    { label: 'Costo total', val: formatUSD(kpis.costo) },
+                    { label: 'Ganancia', val: formatUSD(kpis.ganancia), bold: true, color: '#4ade80' },
+                    { label: 'CM %', val: (kpis.cm * 100).toFixed(2) + '%', bold: true, color: cmColor(kpis.cm) },
+                  ].map(row => (
+                    <tr key={row.label} style={{ borderBottom: '1px solid var(--border)' }}>
+                      <td style={{ padding: '9px 0', color: 'var(--muted)' }}>{row.label}</td>
+                      <td style={{ padding: '9px 0', textAlign: 'right', fontFamily: 'var(--font-mono)', fontWeight: row.bold ? 700 : 400, color: row.color ?? 'var(--text)' }}>{row.val}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <div className="card" style={{ padding: '20px 24px' }}>
+              <h3 style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)', marginBottom: 16 }}>Top vendedores</h3>
+              {porVendedor.slice(0, 6).map((v, i) => (
+                <div key={v.nombre}
+                  onClick={() => setDrill({ tipo: 'vendedor', valor: v.nombre })}
+                  style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '7px 0', borderBottom: '1px solid var(--border)', cursor: 'pointer' }}
+                  onMouseEnter={e => (e.currentTarget as HTMLDivElement).style.background = 'rgba(20,184,166,0.05)'}
+                  onMouseLeave={e => (e.currentTarget as HTMLDivElement).style.background = 'transparent'}
+                >
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <span style={{ fontSize: 11, color: 'var(--muted)', fontFamily: 'var(--font-mono)', width: 16 }}>{i+1}</span>
+                    <span style={{ fontSize: 13, color: 'var(--text)' }}>{v.nombre}</span>
+                  </div>
+                  <div style={{ display: 'flex', gap: 16, alignItems: 'center' }}>
+                    <span style={{ fontSize: 11, color: 'var(--muted)', fontFamily: 'var(--font-mono)' }}>{v.viajes} viajes</span>
+                    <span style={{ fontSize: 13, color: 'var(--teal-400)', fontFamily: 'var(--font-mono)', fontWeight: 500 }}>{formatUSD(v.venta)}</span>
+                  </div>
+                </div>
+              ))}
+            </div>
           </div>
-          <div className="card" style={{ padding: '20px 24px' }}>
-            <h3 style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)', marginBottom: 16 }}>Top vendedores</h3>
-            {porVendedor.slice(0, 6).map((v, i) => (
-              <div key={v.nombre}
-                onClick={() => setDrill({ tipo: 'vendedor', valor: v.nombre })}
-                style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '7px 0', borderBottom: '1px solid var(--border)', cursor: 'pointer' }}
-                onMouseEnter={e => (e.currentTarget as HTMLDivElement).style.background = 'rgba(20,184,166,0.05)'}
-                onMouseLeave={e => (e.currentTarget as HTMLDivElement).style.background = 'transparent'}
-              >
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                  <span style={{ fontSize: 11, color: 'var(--muted)', fontFamily: 'var(--font-mono)', width: 16 }}>{i+1}</span>
-                  <span style={{ fontSize: 13, color: 'var(--text)' }}>{v.nombre}</span>
-                </div>
-                <div style={{ display: 'flex', gap: 16, alignItems: 'center' }}>
-                  <span style={{ fontSize: 11, color: 'var(--muted)', fontFamily: 'var(--font-mono)' }}>{v.viajes} viajes</span>
-                  <span style={{ fontSize: 13, color: 'var(--teal-400)', fontFamily: 'var(--font-mono)', fontWeight: 500 }}>{formatUSD(v.venta)}</span>
-                </div>
-              </div>
-            ))}
+
+          {/* Segunda fila: Resumen por Estado */}
+          <div className="card" style={{ overflow: 'hidden' }}>
+            <div style={{ padding: '14px 20px', borderBottom: '1px solid var(--border)' }}>
+              <span style={{ fontSize: 14, fontWeight: 600, color: 'var(--text)' }}>Resumen por estado</span>
+            </div>
+            <div style={{ overflowX: 'auto' }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+                <thead>
+                  <tr style={{ background: 'var(--surface2)' }}>
+                    {['Estado','Viajes','Pax','Costo','Venta','Ganancia','CM %'].map(h => (
+                      <th key={h} style={{ 
+                        padding: '10px 16px', 
+                        textAlign: h === 'Estado' ? 'left' : 'right', 
+                        color: 'var(--muted)', 
+                        fontWeight: 500, 
+                        fontSize: 12,
+                        whiteSpace: 'nowrap'
+                      }}>{h}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {porEstado.map((e, i) => (
+                    <tr key={e.nombre} style={{ 
+                      borderTop: '1px solid var(--border)', 
+                      background: i % 2 === 0 ? 'transparent' : 'rgba(255,255,255,0.01)' 
+                    }}>
+                      <td style={{ padding: '10px 16px', color: 'var(--text)', fontWeight: 500 }}>
+                        <span style={{ fontSize: 10, padding: '2px 7px', borderRadius: 5, background: 'rgba(255,255,255,0.06)', color: 'var(--text-dim)', marginRight: 8 }}>
+                          {e.nombre}
+                        </span>
+                      </td>
+                      <td style={{ padding: '10px 16px', textAlign: 'right', fontFamily: 'var(--font-mono)', color: 'var(--text)' }}>{e.viajes}</td>
+                      <td style={{ padding: '10px 16px', textAlign: 'right', fontFamily: 'var(--font-mono)', color: 'var(--muted)' }}>{e.pax.toLocaleString()}</td>
+                      <td style={{ padding: '10px 16px', textAlign: 'right', fontFamily: 'var(--font-mono)', color: 'var(--muted)' }}>{formatUSD(e.costo)}</td>
+                      <td style={{ padding: '10px 16px', textAlign: 'right', fontFamily: 'var(--font-mono)', color: 'var(--text)' }}>{formatUSD(e.venta)}</td>
+                      <td style={{ padding: '10px 16px', textAlign: 'right', fontFamily: 'var(--font-mono)', color: '#4ade80', fontWeight: 500 }}>{formatUSD(e.ganancia)}</td>
+                      <td style={{ padding: '10px 16px', textAlign: 'right', fontFamily: 'var(--font-mono)', color: cmColor(e.cm), fontWeight: 600 }}>{(e.cm * 100).toFixed(1)}%</td>
+                    </tr>
+                  ))}
+                </tbody>
+                <tfoot>
+                  <tr style={{ background: 'var(--surface2)', borderTop: '2px solid var(--teal-600)' }}>
+                    <td style={{ padding: '10px 16px', fontWeight: 700, color: 'var(--teal-400)', fontSize: 11 }}>TOTAL</td>
+                    <td style={{ padding: '10px 16px', textAlign: 'right', fontFamily: 'var(--font-mono)', fontWeight: 700, color: 'var(--text)' }}>{kpis.viajes}</td>
+                    <td style={{ padding: '10px 16px', textAlign: 'right', fontFamily: 'var(--font-mono)', fontWeight: 700, color: 'var(--text)' }}>{kpis.pax.toLocaleString()}</td>
+                    <td style={{ padding: '10px 16px', textAlign: 'right', fontFamily: 'var(--font-mono)', fontWeight: 700, color: 'var(--text)' }}>{formatUSD(kpis.costo)}</td>
+                    <td style={{ padding: '10px 16px', textAlign: 'right', fontFamily: 'var(--font-mono)', fontWeight: 700, color: 'var(--text)' }}>{formatUSD(kpis.venta)}</td>
+                    <td style={{ padding: '10px 16px', textAlign: 'right', fontFamily: 'var(--font-mono)', fontWeight: 700, color: '#4ade80' }}>{formatUSD(kpis.ganancia)}</td>
+                    <td style={{ padding: '10px 16px', textAlign: 'right', fontFamily: 'var(--font-mono)', fontWeight: 700, color: cmColor(kpis.cm) }}>{(kpis.cm * 100).toFixed(1)}%</td>
+                  </tr>
+                </tfoot>
+              </table>
+            </div>
           </div>
         </div>
       )}

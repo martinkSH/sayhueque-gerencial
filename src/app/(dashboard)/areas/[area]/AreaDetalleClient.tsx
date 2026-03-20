@@ -6,6 +6,7 @@ import { ArrowLeft, BarChart3, TrendingUp, Users, Briefcase, Globe, Building2, X
 
 type Row = {
   file_code: string
+  booking_name: string | null
   fecha_in: string | null
   fecha_out: string | null
   estado: string | null
@@ -119,7 +120,18 @@ function FilesModal({ titulo, rows, onClose }: {
                     borderBottom: '1px solid var(--border)',
                     background: i % 2 === 0 ? 'transparent' : 'rgba(255,255,255,0.01)',
                   }}>
-                    <td style={{ padding: '8px 12px', fontFamily: 'var(--font-mono)', color: 'var(--teal-400)', fontSize: 11, whiteSpace: 'nowrap' }}>{r.file_code}</td>
+                    <td style={{ padding: '8px 12px' }}>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                        <div style={{ fontFamily: 'var(--font-mono)', color: 'var(--teal-400)', fontSize: 11, fontWeight: 600 }}>
+                          {r.file_code}
+                        </div>
+                        {r.booking_name && (
+                          <div style={{ fontSize: 10, color: 'var(--muted)', maxWidth: 180, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={r.booking_name}>
+                            {r.booking_name}
+                          </div>
+                        )}
+                      </div>
+                    </td>
                     <td style={{ padding: '8px 12px', color: 'var(--muted)', whiteSpace: 'nowrap' }}>{fmtDate(r.fecha_in)}</td>
                     <td style={{ padding: '8px 12px', color: 'var(--muted)', whiteSpace: 'nowrap' }}>{fmtDate(r.fecha_out)}</td>
                     <td style={{ padding: '8px 12px', whiteSpace: 'nowrap' }}>

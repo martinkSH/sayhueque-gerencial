@@ -4,10 +4,14 @@ import { useState } from 'react'
 import { RefreshCw, Database, CheckCircle2, AlertCircle } from 'lucide-react'
 
 type SyncResult = {
-  success: boolean
-  message: string
-  rowsInserted?: number
-  auditRowsInserted?: number
+  ok?: boolean           // ← CAMBIADO: agregado ok
+  success?: boolean      // ← mantener por compatibilidad
+  error?: string         // ← NUEVO: para errores
+  message?: string
+  fetchedAt?: string     // ← NUEVO
+  teamLeader?: number    // ← CAMBIADO: era rowsInserted
+  audit?: number         // ← CAMBIADO: era auditRowsInserted
+  uploadId?: string      // ← NUEVO
   dateRange?: { desde: string; hasta: string }
 }
 
@@ -27,10 +31,15 @@ export default function SyncTourplanButton({
       const res = await fetch('/api/sync-tourplan', { method: 'POST' })
       const data = await res.json()
       setResult(data)
+      
+      // Si fue exitoso, recargar la página después de 1 segundo
+      if (data.ok || data.success) {
+        setTimeout(() => window.location.reload(), 1000)
+      }
     } catch (err) {
       setResult({
-        success: false,
-        message: `Error de red: ${err instanceof Error ? err.message : 'desconocido'}`,
+        ok: false,
+        error: `Error de red: ${err instanceof Error ? err.message : 'desconocido'}`,
       })
     } finally {
       setSyncing(false)
@@ -46,6 +55,7 @@ export default function SyncTourplanButton({
   }
 
   const dateRange = result?.dateRange || initialDateRange
+  const isSuccess = result?.ok || result?.success || false
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
@@ -106,13 +116,13 @@ export default function SyncTourplanButton({
           style={{
             padding: 14,
             borderRadius: 8,
-            border: `1px solid ${result.success ? 'rgba(74,222,128,0.3)' : 'rgba(248,113,113,0.3)'}`,
-            background: result.success ? 'rgba(74,222,128,0.1)' : 'rgba(248,113,113,0.1)',
+            border: `1px solid ${isSuccess ? 'rgba(74,222,128,0.3)' : 'rgba(248,113,113,0.3)'}`,
+            background: isSuccess ? 'rgba(74,222,128,0.1)' : 'rgba(248,113,113,0.1)',
             display: 'flex',
             gap: 10,
           }}
         >
-          {result.success ? (
+          {isSuccess ? (
             <CheckCircle2 size={18} style={{ color: '#4ade80', flexShrink: 0, marginTop: 1 }} />
           ) : (
             <AlertCircle size={18} style={{ color: '#f87171', flexShrink: 0, marginTop: 1 }} />
@@ -121,20 +131,20 @@ export default function SyncTourplanButton({
             <div
               style={{
                 fontSize: 13,
-                color: result.success ? '#4ade80' : '#f87171',
+                color: isSuccess ? '#4ade80' : '#f87171',
                 fontWeight: 600,
                 marginBottom: 4,
               }}
             >
-              {result.success ? '✓ Sincronización exitosa' : '✕ Error en sincronización'}
+              {isSuccess ? '✓ Sincronización exitosa' : '✕ Error en sincronización'}
             </div>
             <div style={{ fontSize: 12, color: 'var(--muted)' }}>
-              {result.message}
+              {result.error || result.message || (result.fetchedAt ? `Completado a las ${result.fetchedAt}` : '')}
             </div>
-            {result.success && result.rowsInserted !== undefined && (
+            {isSuccess && result.teamLeader !== undefined && (
               <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 6 }}>
-                {result.rowsInserted.toLocaleString('es-AR')} bookings insertados
-                {result.auditRowsInserted !== undefined && ` · ${result.auditRowsInserted.toLocaleString('es-AR')} cambios de estado`}
+                {result.teamLeader.toLocaleString('es-AR')} bookings insertados
+                {result.audit !== undefined && ` · ${result.audit.toLocaleString('es-AR')} cambios de estado`}
               </div>
             )}
           </div>

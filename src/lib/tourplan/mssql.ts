@@ -87,6 +87,11 @@ function seasonMonthIdx(fechaIn: string | null): number | null {
   return m >= 5 ? m - 5 : m + 7
 }
 
+// Convertir fecha YYYY-MM-DD a formato YYYYMMDD para TourPlan
+function toTPDateFormat(dateStr: string): string {
+  return dateStr.replace(/-/g, '')
+}
+
 export interface TLRowTP {
   file_code: string
   booking_branch: string | null
@@ -110,7 +115,7 @@ export interface TLRowTP {
 
 export interface AuditRowTP {
   file_code: string
-  booking_name: string | null  // ← AGREGADO
+  booking_name: string | null
   fecha_in: string | null
   area: string | null
   previous_status: string | null
@@ -140,15 +145,56 @@ async function loadCraftConfig() {
   return craftConfig
 }
 
+// Configuración de fechas de sync (se carga dinámicamente desde Supabase)
+let syncDatesConfig: { fecha_desde: string; fecha_hasta: string } | null = null
+
+async function loadSyncDatesConfig() {
+  if (syncDatesConfig !== null) return syncDatesConfig
+  try {
+    const { createClient } = require('@/lib/supabase/server')
+    const supabase = createClient()
+    const { data } = await supabase
+      .from('config_sync_tourplan')
+      .select('fecha_desde, fecha_hasta')
+      .single()
+    
+    if (data) {
+      syncDatesConfig = {
+        fecha_desde: data.fecha_desde,
+        fecha_hasta: data.fecha_hasta
+      }
+    } else {
+      // Valores por defecto si no hay configuración
+      syncDatesConfig = {
+        fecha_desde: '2025-05-01',
+        fecha_hasta: '2028-05-01'
+      }
+    }
+  } catch {
+    // Valores por defecto en caso de error
+    syncDatesConfig = {
+      fecha_desde: '2025-05-01',
+      fecha_hasta: '2028-05-01'
+    }
+  }
+  return syncDatesConfig
+}
+
 export async function fetchTourplanData(): Promise<{
   teamLeader: TLRowTP[]
   audit: AuditRowTP[]
   fetchedAt: string
+  dateRange: { desde: string; hasta: string }
 }> {
   let pool: any = null
   try {
     // Cargar config de Craft
     const craft = await loadCraftConfig()
+    
+    // Cargar config de fechas de sync
+    const dates = await loadSyncDatesConfig()
+    const fechaDesdeTP = toTPDateFormat(dates.fecha_desde)
+    const fechaHastaTP = toTPDateFormat(dates.fecha_hasta)
     
     pool = await sql.connect(config)
 
@@ -166,8 +212,8 @@ export async function fetchTourplanData(): Promise<{
         BookingMarginAmount
       FROM vw_BookingHeaderReportData
       WHERE BookingBranchCode IN ('WE','WI','PL','AL','DM','GR','BN')
-        AND BookingTravelDate >= '20250501'
-        AND BookingTravelDate <= '20280501'
+        AND BookingTravelDate >= '${fechaDesdeTP}'
+        AND BookingTravelDate <= '${fechaHastaTP}'
         AND BookingStatus IN ('C7','CD','CT','FI','FN','IN','OK','OP','PF','XC')
         AND BookingDepartmentName NOT IN ('Test','Sites','Personal Trips','FAM Tours')
         AND BookingBranchName NOT IN ('Test')
@@ -216,7 +262,6 @@ export async function fetchTourplanData(): Promise<{
     })
 
     // ── Bookings Audit ────────────────────────────────────────────────────
-    // ← MODIFICADO: Agregamos BookingName al SELECT
     const auditResult = await pool.request().query(`
       SELECT
         x.FULL_REFERENCE, 
@@ -249,28 +294,22 @@ export async function fetchTourplanData(): Promise<{
       ) x
       WHERE x.PrevBookingStatus IS NOT NULL
         AND x.PrevBookingStatus <> x.BOOKINGSTATUS
-        AND x.TRAVELDATE >= '20250501'
+        AND x.TRAVELDATE >= '${fechaDesdeTP}'
       ORDER BY x.FULL_REFERENCE, x.DateOfChange
     `)
 
     const audit: AuditRowTP[] = auditResult.recordset.map((r: any) => {
       const fechaIn = toISO(r.TRAVELDATE)
       const operador = r.Analysis1?.trim() || null
-      
-      // Reclasificar a Craft si está activo
-      // Nota: En audit no tenemos vendedor directo, usamos area del file_code
       let area = areaFromFileCode(String(r.FULL_REFERENCE ?? '').trim())
-      
-      // Si queremos que audit también refleje Craft, necesitaríamos JOIN con team_leader
-      // Por ahora dejamos el área original en audit
       
       return {
         file_code:       String(r.FULL_REFERENCE ?? '').trim(),
         booking_name:    String(r.BookingName ?? '').trim() || null,
         fecha_in:        fechaIn,
         area:            area,
-        previous_status: String(r.PreviousStatus ?? '').trim(),  // código raw: QU, OK, FI, etc.
-        new_status:      String(r.NewStatus ?? '').trim(),        // código raw
+        previous_status: String(r.PreviousStatus ?? '').trim(),
+        new_status:      String(r.NewStatus ?? '').trim(),
         date_of_change:  toISO(r.DateOfChange),
         operador:        operador,
         temporada:       getTemporada(fechaIn),
@@ -278,7 +317,15 @@ export async function fetchTourplanData(): Promise<{
     })
 
     const fetchedAt = new Date().toISOString().replace('T', ' ').slice(0, 16)
-    return { teamLeader, audit, fetchedAt }
+    return { 
+      teamLeader, 
+      audit, 
+      fetchedAt,
+      dateRange: {
+        desde: dates.fecha_desde,
+        hasta: dates.fecha_hasta
+      }
+    }
 
   } finally {
     if (pool) await pool.close()

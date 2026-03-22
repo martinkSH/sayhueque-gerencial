@@ -1,7 +1,7 @@
 'use client'
 
-import { useState, useMemo, useCallback } from 'react'
-import { Search, ArrowUpDown, ArrowUp, ArrowDown, Target, CheckCircle } from 'lucide-react'
+import { useState, useMemo, useCallback, useEffect } from 'react'
+import { Search, ArrowUpDown, ArrowUp, ArrowDown, Target, CheckCircle, GripVertical, RotateCcw } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 
 function formatUSD(n: number) {
@@ -39,6 +39,8 @@ type SortDir = 'asc' | 'desc'
 type CmFiltro = 'all' | 'en_rango' | 'bajo' | 'sobre' | 'sin_sf' | 'aprobados'
 type Rango = { cm_min: number; cm_max: number }
 
+type ColDef = { key: SortKey; label: string; align: 'left' | 'right' }
+
 function getCmColor(cm: number, rango: Rango): { bg: string; color: string; label: string } {
   const { cm_min, cm_max } = rango
   if (cm >= cm_min && cm <= cm_max) return { bg: 'rgba(74,222,128,0.12)', color: '#4ade80', label: 'En rango' }
@@ -53,7 +55,7 @@ function getCmColor(cm: number, rango: Rango): { bg: string; color: string; labe
   return { bg: 'rgba(253,224,71,0.12)', color: '#fde047', label: `${(diff*100).toFixed(0)}pp bajo mín` }
 }
 
-const COLS: { key: SortKey; label: string; align: 'left' | 'right' }[] = [
+const DEFAULT_COLS: ColDef[] = [
   { key: 'file_code',    label: 'File',        align: 'left' },
   { key: 'fecha_in',     label: 'Fecha IN',    align: 'left' },
   { key: 'fecha_out',    label: 'Fecha OUT',   align: 'left' },
@@ -72,6 +74,7 @@ const COLS: { key: SortKey; label: string; align: 'left' | 'right' }[] = [
 ]
 
 const TEMPORADAS = ['25/26','24/25','26/27']
+const STORAGE_KEY = 'detalle_cm_column_order'
 
 export default function DetalleCMClient({
   files, areas, areaFiltro, temp, rangoMin, rangoMax, isAdmin, excepciones: excepcionesInit, userNombre,
@@ -91,6 +94,42 @@ export default function DetalleCMClient({
   const [pendingApproval, setPendingApproval] = useState<{ file_code: string; motivo: string } | null>(null)
   const [saving, setSaving] = useState(false)
 
+  // Columnas arrastrables con localStorage
+  const [cols, setCols] = useState<ColDef[]>(() => {
+    if (typeof window === 'undefined') return DEFAULT_COLS
+    const stored = localStorage.getItem(STORAGE_KEY)
+    if (!stored) return DEFAULT_COLS
+    try {
+      const keys = JSON.parse(stored) as SortKey[]
+      return keys.map(k => DEFAULT_COLS.find(c => c.key === k)!).filter(Boolean)
+    } catch {
+      return DEFAULT_COLS
+    }
+  })
+
+  const [draggedCol, setDraggedCol] = useState<number | null>(null)
+
+  useEffect(() => {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(cols.map(c => c.key)))
+  }, [cols])
+
+  const resetCols = () => {
+    setCols(DEFAULT_COLS)
+    localStorage.removeItem(STORAGE_KEY)
+  }
+
+  const handleDragStart = (index: number) => setDraggedCol(index)
+  const handleDragOver = (e: React.DragEvent, index: number) => {
+    e.preventDefault()
+    if (draggedCol === null || draggedCol === index) return
+    const newCols = [...cols]
+    const [moved] = newCols.splice(draggedCol, 1)
+    newCols.splice(index, 0, moved)
+    setCols(newCols)
+    setDraggedCol(index)
+  }
+  const handleDragEnd = () => setDraggedCol(null)
+
   function handleSort(key: SortKey) {
     if (sortKey === key) setSortDir(d => d === 'asc' ? 'desc' : 'asc')
     else { setSortKey(key); setSortDir('asc') }
@@ -99,7 +138,7 @@ export default function DetalleCMClient({
   const filtered = useMemo(() => {
     const q = search.toLowerCase()
     return files.filter(f => {
-      if (q && !f.file_code.toLowerCase().includes(q) && !f.cliente.toLowerCase().includes(q)) return false
+      if (q && !f.file_code.toLowerCase().includes(q) && !f.cliente.toLowerCase().includes(q) && !f.vendedor.toLowerCase().includes(q)) return false
       const isExcepcion = excepciones.has(f.file_code)
       if (cmFiltro === 'en_rango') return f.cm >= rangoMin && f.cm <= rangoMax && !isExcepcion
       if (cmFiltro === 'bajo') return f.cm < rangoMin && !isExcepcion
@@ -279,11 +318,11 @@ export default function DetalleCMClient({
         ))}
       </div>
 
-      {/* Buscador + quitar filtro */}
+      {/* Buscador + quitar filtro + reset columnas */}
       <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
         <div style={{ position: 'relative', maxWidth: 360, flex: 1 }}>
           <Search size={14} style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', color: 'var(--muted)' }} />
-          <input type="text" placeholder="Buscar por file o cliente..."
+          <input type="text" placeholder="Buscar por file, cliente o vendedor..."
             value={search} onChange={e => setSearch(e.target.value)}
             style={{ width: '100%', padding: '8px 12px 8px 34px', borderRadius: 8, fontSize: 13, background: 'var(--surface2)', border: '1px solid var(--border)', color: 'var(--text)', outline: 'none', boxSizing: 'border-box' }}
           />
@@ -292,6 +331,12 @@ export default function DetalleCMClient({
           <button onClick={() => setCmFiltro('all')}
             style={{ padding: '7px 14px', borderRadius: 8, border: '1px solid var(--border)', background: 'var(--surface2)', color: 'var(--muted)', cursor: 'pointer', fontSize: 12 }}>
             ✕ Quitar filtro
+          </button>
+        )}
+        {JSON.stringify(cols.map(c => c.key)) !== JSON.stringify(DEFAULT_COLS.map(c => c.key)) && (
+          <button onClick={resetCols}
+            style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '7px 14px', borderRadius: 8, border: '1px solid var(--border)', background: 'var(--surface2)', color: 'var(--muted)', cursor: 'pointer', fontSize: 12 }}>
+            <RotateCcw size={12} /> Restaurar columnas
           </button>
         )}
       </div>
@@ -308,11 +353,22 @@ export default function DetalleCMClient({
           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
             <thead>
               <tr style={{ background: 'var(--surface2)' }}>
-                {COLS.map(col => (
-                  <th key={col.key} onClick={() => handleSort(col.key)}
-                    style={{ padding: '9px 14px', textAlign: col.align, color: 'var(--muted)', fontWeight: 500, fontSize: 11, whiteSpace: 'nowrap', cursor: 'pointer', userSelect: 'none' }}>
+                {cols.map((col, idx) => (
+                  <th key={col.key}
+                    draggable
+                    onDragStart={() => handleDragStart(idx)}
+                    onDragOver={e => handleDragOver(e, idx)}
+                    onDragEnd={handleDragEnd}
+                    onClick={() => handleSort(col.key)}
+                    style={{
+                      padding: '9px 14px', textAlign: col.align, color: 'var(--muted)', fontWeight: 500, fontSize: 11, whiteSpace: 'nowrap', cursor: 'move', userSelect: 'none',
+                      background: draggedCol === idx ? 'rgba(20,184,166,0.1)' : 'var(--surface2)',
+                      position: 'relative',
+                    }}>
                     <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
-                      {col.label} <SortIcon col={col.key} />
+                      <GripVertical size={10} style={{ opacity: 0.4 }} />
+                      {col.label}
+                      <SortIcon col={col.key} />
                     </span>
                   </th>
                 ))}
@@ -323,42 +379,26 @@ export default function DetalleCMClient({
             {/* Fila totales */}
             <tbody>
               <tr style={{ background: 'var(--surface2)', borderBottom: '2px solid var(--teal-600)' }}>
-                <td style={{ padding: '9px 14px', fontWeight: 700, fontSize: 11, color: 'var(--teal-400)', whiteSpace: 'nowrap' }}>TOTAL ({sorted.length} files)</td>
-                <td colSpan={6} />
-                <td style={{ padding: '9px 14px', textAlign: 'right', fontFamily: 'var(--font-mono)', fontWeight: 700, fontSize: 12, color: 'var(--text)' }}>{totalPax.toLocaleString('es-AR')}</td>
-                <td style={{ padding: '9px 14px', textAlign: 'right', fontFamily: 'var(--font-mono)', fontWeight: 700, fontSize: 12, color: 'var(--muted)' }}>{formatUSD(totalCosto)}</td>
-                <td style={{ padding: '9px 14px', textAlign: 'right' }}>
-                  {hasSfData ? <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 1 }}>
-                    <span style={{ fontFamily: 'var(--font-mono)', fontWeight: 700, fontSize: 12, color: '#60a5fa' }}>{formatUSD(totalCostoSf)}</span>
-                    {totalCosto > 0 && <span style={{ fontSize: 10, fontFamily: 'var(--font-mono)', fontWeight: 600, color: Math.abs(((totalCostoSf-totalCosto)/totalCosto)*100) < 5 ? 'var(--muted)' : totalCostoSf > totalCosto ? '#f87171' : '#4ade80' }}>{((totalCostoSf-totalCosto)/totalCosto) >= 0 ? '+' : ''}{(((totalCostoSf-totalCosto)/totalCosto)*100).toFixed(1)}%</span>}
-                  </div> : <span style={{ color: 'var(--muted)', fontSize: 11 }}>—</span>}
-                </td>
-                <td style={{ padding: '9px 14px', textAlign: 'right', fontFamily: 'var(--font-mono)', fontWeight: 700, fontSize: 12, color: 'var(--text)' }}>{formatUSD(totalVenta)}</td>
-                <td style={{ padding: '9px 14px', textAlign: 'right' }}>
-                  {hasSfData ? <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 1 }}>
-                    <span style={{ fontFamily: 'var(--font-mono)', fontWeight: 700, fontSize: 12, color: '#60a5fa' }}>{formatUSD(totalVentaSf)}</span>
-                    {totalVenta > 0 && <span style={{ fontSize: 10, fontFamily: 'var(--font-mono)', fontWeight: 600, color: Math.abs(((totalVentaSf-totalVenta)/totalVenta)*100) < 5 ? 'var(--muted)' : totalVentaSf > totalVenta ? '#4ade80' : '#f87171' }}>{((totalVentaSf-totalVenta)/totalVenta) >= 0 ? '+' : ''}{(((totalVentaSf-totalVenta)/totalVenta)*100).toFixed(1)}%</span>}
-                  </div> : <span style={{ color: 'var(--muted)', fontSize: 11 }}>—</span>}
-                </td>
-                <td style={{ padding: '9px 14px', textAlign: 'right', fontFamily: 'var(--font-mono)', fontWeight: 700, fontSize: 12, color: '#4ade80' }}>{formatUSD(totalGanancia)}</td>
-                <td style={{ padding: '9px 14px', textAlign: 'right' }}>
-                  {hasSfData ? <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 1 }}>
-                    <span style={{ fontFamily: 'var(--font-mono)', fontWeight: 700, fontSize: 12, color: '#60a5fa' }}>{formatUSD(totalGananciaSf)}</span>
-                    {totalGanancia > 0 && <span style={{ fontSize: 10, fontFamily: 'var(--font-mono)', fontWeight: 600, color: Math.abs(((totalGananciaSf-totalGanancia)/totalGanancia)*100) < 5 ? 'var(--muted)' : totalGananciaSf > totalGanancia ? '#4ade80' : '#f87171' }}>{((totalGananciaSf-totalGanancia)/totalGanancia) >= 0 ? '+' : ''}{(((totalGananciaSf-totalGanancia)/totalGanancia)*100).toFixed(1)}%</span>}
-                  </div> : <span style={{ color: 'var(--muted)' }}>—</span>}
-                </td>
-                <td style={{ padding: '9px 14px', textAlign: 'right' }}>
-                  <span style={{ padding: '3px 8px', borderRadius: 6, fontWeight: 700, fontSize: 12, fontFamily: 'var(--font-mono)', background: getCmColor(totalCM, { cm_min: rangoMin, cm_max: rangoMax }).bg, color: getCmColor(totalCM, { cm_min: rangoMin, cm_max: rangoMax }).color }}>
-                    {(totalCM * 100).toFixed(1)}%
-                  </span>
-                </td>
+                {cols.map((col) => {
+                  if (col.key === 'file_code') return <td key={col.key} style={{ padding: '9px 14px', fontWeight: 700, fontSize: 11, color: 'var(--teal-400)', whiteSpace: 'nowrap' }}>TOTAL ({sorted.length} files)</td>
+                  if (['fecha_in', 'fecha_out', 'estado', 'cliente', 'departamento', 'vendedor'].includes(col.key)) return <td key={col.key} />
+                  if (col.key === 'pax') return <td key={col.key} style={{ padding: '9px 14px', textAlign: 'right', fontFamily: 'var(--font-mono)', fontWeight: 700, fontSize: 12, color: 'var(--text)' }}>{totalPax.toLocaleString('es-AR')}</td>
+                  if (col.key === 'costo') return <td key={col.key} style={{ padding: '9px 14px', textAlign: 'right', fontFamily: 'var(--font-mono)', fontWeight: 700, fontSize: 12, color: 'var(--muted)' }}>{formatUSD(totalCosto)}</td>
+                  if (col.key === 'costo_sf') return <td key={col.key} style={{ padding: '9px 14px', textAlign: 'right' }}>{hasSfData ? <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 1 }}><span style={{ fontFamily: 'var(--font-mono)', fontWeight: 700, fontSize: 12, color: '#60a5fa' }}>{formatUSD(totalCostoSf)}</span>{totalCosto > 0 && <span style={{ fontSize: 10, fontFamily: 'var(--font-mono)', fontWeight: 600, color: Math.abs(((totalCostoSf-totalCosto)/totalCosto)*100) < 5 ? 'var(--muted)' : totalCostoSf > totalCosto ? '#f87171' : '#4ade80' }}>{((totalCostoSf-totalCosto)/totalCosto) >= 0 ? '+' : ''}{(((totalCostoSf-totalCosto)/totalCosto)*100).toFixed(1)}%</span>}</div> : <span style={{ color: 'var(--muted)', fontSize: 11 }}>—</span>}</td>
+                  if (col.key === 'venta') return <td key={col.key} style={{ padding: '9px 14px', textAlign: 'right', fontFamily: 'var(--font-mono)', fontWeight: 700, fontSize: 12, color: 'var(--text)' }}>{formatUSD(totalVenta)}</td>
+                  if (col.key === 'venta_sf') return <td key={col.key} style={{ padding: '9px 14px', textAlign: 'right' }}>{hasSfData ? <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 1 }}><span style={{ fontFamily: 'var(--font-mono)', fontWeight: 700, fontSize: 12, color: '#60a5fa' }}>{formatUSD(totalVentaSf)}</span>{totalVenta > 0 && <span style={{ fontSize: 10, fontFamily: 'var(--font-mono)', fontWeight: 600, color: Math.abs(((totalVentaSf-totalVenta)/totalVenta)*100) < 5 ? 'var(--muted)' : totalVentaSf > totalVenta ? '#4ade80' : '#f87171' }}>{((totalVentaSf-totalVenta)/totalVenta) >= 0 ? '+' : ''}{(((totalVentaSf-totalVenta)/totalVenta)*100).toFixed(1)}%</span>}</div> : <span style={{ color: 'var(--muted)', fontSize: 11 }}>—</span>}</td>
+                  if (col.key === 'ganancia') return <td key={col.key} style={{ padding: '9px 14px', textAlign: 'right', fontFamily: 'var(--font-mono)', fontWeight: 700, fontSize: 12, color: '#4ade80' }}>{formatUSD(totalGanancia)}</td>
+                  if (col.key === 'ganancia_sf') return <td key={col.key} style={{ padding: '9px 14px', textAlign: 'right' }}>{hasSfData ? <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 1 }}><span style={{ fontFamily: 'var(--font-mono)', fontWeight: 700, fontSize: 12, color: '#60a5fa' }}>{formatUSD(totalGananciaSf)}</span>{totalGanancia > 0 && <span style={{ fontSize: 10, fontFamily: 'var(--font-mono)', fontWeight: 600, color: Math.abs(((totalGananciaSf-totalGanancia)/totalGanancia)*100) < 5 ? 'var(--muted)' : totalGananciaSf > totalGanancia ? '#4ade80' : '#f87171' }}>{((totalGananciaSf-totalGanancia)/totalGanancia) >= 0 ? '+' : ''}{(((totalGananciaSf-totalGanancia)/totalGanancia)*100).toFixed(1)}%</span>}</div> : <span style={{ color: 'var(--muted)' }}>—</span>}</td>
+                  if (col.key === 'cm') return <td key={col.key} style={{ padding: '9px 14px', textAlign: 'right' }}><span style={{ padding: '3px 8px', borderRadius: 6, fontWeight: 700, fontSize: 12, fontFamily: 'var(--font-mono)', background: getCmColor(totalCM, { cm_min: rangoMin, cm_max: rangoMax }).bg, color: getCmColor(totalCM, { cm_min: rangoMin, cm_max: rangoMax }).color }}>{(totalCM * 100).toFixed(1)}%</span></td>
+                  return <td key={col.key} />
+                })}
                 <td />
               </tr>
             </tbody>
 
             <tbody>
               {sorted.length === 0 ? (
-                <tr><td colSpan={COLS.length + 1} style={{ padding: '28px 20px', textAlign: 'center', color: 'var(--muted)' }}>Sin resultados</td></tr>
+                <tr><td colSpan={cols.length + 1} style={{ padding: '28px 20px', textAlign: 'center', color: 'var(--muted)' }}>Sin resultados</td></tr>
               ) : sorted.map((r, i) => {
                 const excepcion = excepciones.get(r.file_code)
                 const isAprobado = !!excepcion
@@ -370,63 +410,31 @@ export default function DetalleCMClient({
                     borderTop: '1px solid var(--border)',
                     background: isAprobado ? 'rgba(167,139,250,0.04)' : i % 2 === 0 ? 'transparent' : 'rgba(255,255,255,0.01)',
                   }}>
-                    <td style={{ padding: '8px 14px' }}>
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-                        <div style={{ color: 'var(--text)', fontFamily: 'var(--font-mono)', fontSize: 12, fontWeight: 600 }}>
-                          {r.file_code}
-                        </div>
-                        {r.booking_name && (
-                          <div style={{ fontSize: 10, color: 'var(--muted)', maxWidth: 180, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={r.booking_name}>
-                            {r.booking_name}
+                    {cols.map(col => {
+                      if (col.key === 'file_code') return (
+                        <td key={col.key} style={{ padding: '8px 14px' }}>
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                            <div style={{ color: 'var(--text)', fontFamily: 'var(--font-mono)', fontSize: 12, fontWeight: 600 }}>{r.file_code}</div>
+                            {r.booking_name && <div style={{ fontSize: 10, color: 'var(--muted)', maxWidth: 180, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={r.booking_name}>{r.booking_name}</div>}
                           </div>
-                        )}
-                      </div>
-                    </td>
-                    <td style={{ padding: '8px 14px', color: 'var(--text)', whiteSpace: 'nowrap' }}>{fmtDate(r.fecha_in)}</td>
-                    <td style={{ padding: '8px 14px', color: 'var(--muted)', whiteSpace: 'nowrap' }}>{fmtDate(r.fecha_out)}</td>
-                    <td style={{ padding: '8px 14px', whiteSpace: 'nowrap' }}>
-                      <span style={{ fontSize: 10, padding: '2px 7px', borderRadius: 5, background: 'rgba(255,255,255,0.06)', color: 'var(--text-dim)' }}>{r.estado}</span>
-                    </td>
-                    <td style={{ padding: '8px 14px', color: 'var(--text)', maxWidth: 180, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.cliente}</td>
-                    <td style={{ padding: '8px 14px', color: 'var(--muted)', whiteSpace: 'nowrap' }}>{r.departamento}</td>
-                    <td style={{ padding: '8px 14px', color: 'var(--muted)', whiteSpace: 'nowrap' }}>{r.vendedor}</td>
-                    <td style={{ padding: '8px 14px', textAlign: 'right', color: 'var(--muted)', fontFamily: 'var(--font-mono)' }}>{r.pax}</td>
-                    <td style={{ padding: '8px 14px', textAlign: 'right', color: 'var(--muted)', fontFamily: 'var(--font-mono)', whiteSpace: 'nowrap' }}>{formatUSD(r.costo)}</td>
-                    <td style={{ padding: '8px 14px', textAlign: 'right', whiteSpace: 'nowrap' }}>
-                      {r.costo_sf !== null ? (
-                        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 1 }}>
-                          <span style={{ fontFamily: 'var(--font-mono)', fontSize: 12, color: '#60a5fa' }}>{formatUSD(r.costo_sf)}</span>
-                          {r.costo > 0 && (() => { const d = ((r.costo_sf - r.costo) / r.costo) * 100; return <span style={{ fontSize: 10, fontFamily: 'var(--font-mono)', fontWeight: 600, color: Math.abs(d) < 5 ? 'var(--muted)' : d > 0 ? '#f87171' : '#4ade80' }}>{d >= 0 ? '+' : ''}{d.toFixed(1)}%</span> })()}
-                        </div>
-                      ) : <span style={{ fontSize: 11, color: 'var(--muted)' }}>—</span>}
-                    </td>
-                    <td style={{ padding: '8px 14px', textAlign: 'right', color: 'var(--text)', fontFamily: 'var(--font-mono)', whiteSpace: 'nowrap' }}>
-                      {formatUSD(r.venta)}
-                      {r.sin_sf && <span title="B2C sin match en Salesforce" style={{ marginLeft: 6, fontSize: 10, padding: '1px 5px', borderRadius: 4, background: 'rgba(251,191,36,0.15)', color: '#fbbf24', border: '1px solid rgba(251,191,36,0.3)', verticalAlign: 'middle' }}>SF?</span>}
-                    </td>
-                    <td style={{ padding: '8px 14px', textAlign: 'right', whiteSpace: 'nowrap' }}>
-                      {r.venta_sf !== null ? (
-                        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 1 }}>
-                          <span style={{ fontFamily: 'var(--font-mono)', fontSize: 12, color: '#60a5fa' }}>{formatUSD(r.venta_sf)}</span>
-                          {r.venta > 0 && (() => { const d = ((r.venta_sf - r.venta) / r.venta) * 100; return <span style={{ fontSize: 10, fontFamily: 'var(--font-mono)', fontWeight: 600, color: Math.abs(d) < 5 ? 'var(--muted)' : d > 0 ? '#4ade80' : '#f87171' }}>{d >= 0 ? '+' : ''}{d.toFixed(1)}%</span> })()}
-                        </div>
-                      ) : <span style={{ fontSize: 11, color: 'var(--muted)' }}>—</span>}
-                    </td>
-                    <td style={{ padding: '8px 14px', textAlign: 'right', fontFamily: 'var(--font-mono)', whiteSpace: 'nowrap', color: r.ganancia < 0 ? '#f87171' : 'var(--text)' }}>{formatUSD(r.ganancia)}</td>
-                    <td style={{ padding: '8px 14px', textAlign: 'right', whiteSpace: 'nowrap' }}>
-                      {r.ganancia_sf !== null ? (
-                        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 1 }}>
-                          <span style={{ fontFamily: 'var(--font-mono)', fontSize: 12, color: r.ganancia_sf < 0 ? '#f87171' : '#60a5fa' }}>{formatUSD(r.ganancia_sf)}</span>
-                          {(() => { const d = r.ganancia > 0 ? ((r.ganancia_sf - r.ganancia) / r.ganancia) * 100 : null; if (d === null) return null; return <span style={{ fontSize: 10, fontFamily: 'var(--font-mono)', fontWeight: 600, color: Math.abs(d) < 5 ? 'var(--muted)' : d > 0 ? '#4ade80' : '#f87171' }}>{d >= 0 ? '+' : ''}{d.toFixed(1)}%</span> })()}
-                        </div>
-                      ) : <span style={{ fontSize: 11, color: 'var(--muted)' }}>—</span>}
-                    </td>
-                    <td style={{ padding: '8px 14px', textAlign: 'right', whiteSpace: 'nowrap' }}>
-                      <span style={{ display: 'inline-block', padding: '3px 8px', borderRadius: 6, fontSize: 12, fontWeight: 700, fontFamily: 'var(--font-mono)', background: cmStyle.bg, color: cmStyle.color, minWidth: 52, textAlign: 'center' }}
-                        title={isAprobado && excepcion?.motivo ? `Aprobado por ${excepcion.aprobado_por_nombre}: ${excepcion.motivo}` : cmStyle.label}>
-                        {(r.cm * 100).toFixed(1)}%
-                      </span>
-                    </td>
+                        </td>
+                      )
+                      if (col.key === 'fecha_in') return <td key={col.key} style={{ padding: '8px 14px', color: 'var(--text)', whiteSpace: 'nowrap' }}>{fmtDate(r.fecha_in)}</td>
+                      if (col.key === 'fecha_out') return <td key={col.key} style={{ padding: '8px 14px', color: 'var(--muted)', whiteSpace: 'nowrap' }}>{fmtDate(r.fecha_out)}</td>
+                      if (col.key === 'estado') return <td key={col.key} style={{ padding: '8px 14px', whiteSpace: 'nowrap' }}><span style={{ fontSize: 10, padding: '2px 7px', borderRadius: 5, background: 'rgba(255,255,255,0.06)', color: 'var(--text-dim)' }}>{r.estado}</span></td>
+                      if (col.key === 'cliente') return <td key={col.key} style={{ padding: '8px 14px', color: 'var(--text)', maxWidth: 180, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.cliente}</td>
+                      if (col.key === 'departamento') return <td key={col.key} style={{ padding: '8px 14px', color: 'var(--muted)', whiteSpace: 'nowrap' }}>{r.departamento}</td>
+                      if (col.key === 'vendedor') return <td key={col.key} style={{ padding: '8px 14px', color: 'var(--muted)', whiteSpace: 'nowrap' }}>{r.vendedor}</td>
+                      if (col.key === 'pax') return <td key={col.key} style={{ padding: '8px 14px', textAlign: 'right', color: 'var(--muted)', fontFamily: 'var(--font-mono)' }}>{r.pax}</td>
+                      if (col.key === 'costo') return <td key={col.key} style={{ padding: '8px 14px', textAlign: 'right', color: 'var(--muted)', fontFamily: 'var(--font-mono)', whiteSpace: 'nowrap' }}>{formatUSD(r.costo)}</td>
+                      if (col.key === 'costo_sf') return <td key={col.key} style={{ padding: '8px 14px', textAlign: 'right', whiteSpace: 'nowrap' }}>{r.costo_sf !== null ? <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 1 }}><span style={{ fontFamily: 'var(--font-mono)', fontSize: 12, color: '#60a5fa' }}>{formatUSD(r.costo_sf)}</span>{r.costo > 0 && (() => { const d = ((r.costo_sf - r.costo) / r.costo) * 100; return <span style={{ fontSize: 10, fontFamily: 'var(--font-mono)', fontWeight: 600, color: Math.abs(d) < 5 ? 'var(--muted)' : d > 0 ? '#f87171' : '#4ade80' }}>{d >= 0 ? '+' : ''}{d.toFixed(1)}%</span> })()}</div> : <span style={{ fontSize: 11, color: 'var(--muted)' }}>—</span>}</td>
+                      if (col.key === 'venta') return <td key={col.key} style={{ padding: '8px 14px', textAlign: 'right', color: 'var(--text)', fontFamily: 'var(--font-mono)', whiteSpace: 'nowrap' }}>{formatUSD(r.venta)}{r.sin_sf && <span title="B2C sin match en Salesforce" style={{ marginLeft: 6, fontSize: 10, padding: '1px 5px', borderRadius: 4, background: 'rgba(251,191,36,0.15)', color: '#fbbf24', border: '1px solid rgba(251,191,36,0.3)', verticalAlign: 'middle' }}>SF?</span>}</td>
+                      if (col.key === 'venta_sf') return <td key={col.key} style={{ padding: '8px 14px', textAlign: 'right', whiteSpace: 'nowrap' }}>{r.venta_sf !== null ? <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 1 }}><span style={{ fontFamily: 'var(--font-mono)', fontSize: 12, color: '#60a5fa' }}>{formatUSD(r.venta_sf)}</span>{r.venta > 0 && (() => { const d = ((r.venta_sf - r.venta) / r.venta) * 100; return <span style={{ fontSize: 10, fontFamily: 'var(--font-mono)', fontWeight: 600, color: Math.abs(d) < 5 ? 'var(--muted)' : d > 0 ? '#4ade80' : '#f87171' }}>{d >= 0 ? '+' : ''}{d.toFixed(1)}%</span> })()}</div> : <span style={{ fontSize: 11, color: 'var(--muted)' }}>—</span>}</td>
+                      if (col.key === 'ganancia') return <td key={col.key} style={{ padding: '8px 14px', textAlign: 'right', fontFamily: 'var(--font-mono)', whiteSpace: 'nowrap', color: r.ganancia < 0 ? '#f87171' : 'var(--text)' }}>{formatUSD(r.ganancia)}</td>
+                      if (col.key === 'ganancia_sf') return <td key={col.key} style={{ padding: '8px 14px', textAlign: 'right', whiteSpace: 'nowrap' }}>{r.ganancia_sf !== null ? <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 1 }}><span style={{ fontFamily: 'var(--font-mono)', fontSize: 12, color: r.ganancia_sf < 0 ? '#f87171' : '#60a5fa' }}>{formatUSD(r.ganancia_sf)}</span>{(() => { const d = r.ganancia > 0 ? ((r.ganancia_sf - r.ganancia) / r.ganancia) * 100 : null; if (d === null) return null; return <span style={{ fontSize: 10, fontFamily: 'var(--font-mono)', fontWeight: 600, color: Math.abs(d) < 5 ? 'var(--muted)' : d > 0 ? '#4ade80' : '#f87171' }}>{d >= 0 ? '+' : ''}{d.toFixed(1)}%</span> })()}</div> : <span style={{ fontSize: 11, color: 'var(--muted)' }}>—</span>}</td>
+                      if (col.key === 'cm') return <td key={col.key} style={{ padding: '8px 14px', textAlign: 'right', whiteSpace: 'nowrap' }}><span style={{ display: 'inline-block', padding: '3px 8px', borderRadius: 6, fontSize: 12, fontWeight: 700, fontFamily: 'var(--font-mono)', background: cmStyle.bg, color: cmStyle.color, minWidth: 52, textAlign: 'center' }} title={isAprobado && excepcion?.motivo ? `Aprobado por ${excepcion.aprobado_por_nombre}: ${excepcion.motivo}` : cmStyle.label}>{(r.cm * 100).toFixed(1)}%</span></td>
+                      return <td key={col.key} />
+                    })}
                     {/* Aprobación */}
                     <td style={{ padding: '8px 14px', textAlign: 'center', whiteSpace: 'nowrap' }}>
                       {isAprobado ? (

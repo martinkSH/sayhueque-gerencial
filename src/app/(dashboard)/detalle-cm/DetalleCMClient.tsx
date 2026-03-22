@@ -178,12 +178,30 @@ export default function DetalleCMClient({
 
   const aprobar = useCallback(async (file_code: string, motivo: string) => {
     setSaving(true)
-    const { error } = await supabase.from('cm_excepciones').upsert({
-      file_code, area: areaFiltro, motivo: motivo || null, aprobado_por_nombre: userNombre,
-    }, { onConflict: 'file_code,area' })
-    if (!error) {
-      setExcepciones(prev => new Map(prev).set(file_code, { file_code, area: areaFiltro, motivo, aprobado_por_nombre: userNombre }))
+    
+    const { data, error } = await supabase
+      .from('cm_excepciones')
+      .upsert({
+        file_code,
+        area: areaFiltro,
+        motivo: motivo || null,
+        aprobado_por_nombre: userNombre,
+      })
+      .select()
+
+    if (error) {
+      console.error('Error al aprobar:', error)
+      alert(`Error al aprobar: ${error.message}`)
+    } else {
+      console.log('Aprobación exitosa:', data)
+      setExcepciones(prev => new Map(prev).set(file_code, {
+        file_code,
+        area: areaFiltro,
+        motivo: motivo || null,
+        aprobado_por_nombre: userNombre
+      }))
     }
+
     setSaving(false)
     setPendingApproval(null)
   }, [supabase, areaFiltro, userNombre])

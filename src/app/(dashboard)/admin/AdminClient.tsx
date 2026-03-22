@@ -1,7 +1,8 @@
 'use client'
 
 import { useState } from 'react'
-import { Settings, Plus, Trash2, Edit2, Check, X, Target } from 'lucide-react'
+import { Settings, Plus, Trash2, Edit2, Check, X, Target, Calendar, Users } from 'lucide-react'
+import Link from 'next/link'
 
 const AREAS_DISPONIBLES = ['B2C', 'Aliwen', 'DMC FITS', 'Grupos DMC', 'Booknow']
 const AREAS_CM = ['Web', 'Plataformas', 'Walk In', 'Aliwen', 'DMC FITS', 'Grupos DMC', 'Booknow']
@@ -148,10 +149,56 @@ export default function AdminClient({ users: initialUsers, currentUserId, cmRang
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 28 }}>
 
+      {/* Tabs de navegación */}
+      <div style={{ display: 'flex', gap: 8, borderBottom: '1px solid var(--border)', paddingBottom: 0 }}>
+        <Link href="/admin" style={{
+          padding: '10px 20px',
+          borderBottom: '2px solid var(--teal-600)',
+          color: 'var(--text)',
+          textDecoration: 'none',
+          fontSize: 14,
+          fontWeight: 600,
+          display: 'flex',
+          alignItems: 'center',
+          gap: 8,
+        }}>
+          <Users size={16} />
+          Usuarios y Rangos CM
+        </Link>
+        
+        <Link href="/admin/departamentos-virtuales" style={{
+          padding: '10px 20px',
+          borderBottom: '2px solid transparent',
+          color: 'var(--muted)',
+          textDecoration: 'none',
+          fontSize: 14,
+          display: 'flex',
+          alignItems: 'center',
+          gap: 8,
+        }}>
+          <Settings size={16} />
+          Departamentos Virtuales
+        </Link>
+
+        <Link href="/admin/configuracion-sync" style={{
+          padding: '10px 20px',
+          borderBottom: '2px solid transparent',
+          color: 'var(--muted)',
+          textDecoration: 'none',
+          fontSize: 14,
+          display: 'flex',
+          alignItems: 'center',
+          gap: 8,
+        }}>
+          <Calendar size={16} />
+          Configuración Sync
+        </Link>
+      </div>
+
       {/* Header */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 12 }}>
         <div>
-          <h1 style={{ fontSize: 22, fontWeight: 600, color: 'var(--text)', margin: 0 }}>Administración</h1>
+          <h1 style={{ fontSize: 22, fontWeight: 600, color: 'var(--text)', margin: 0 }}>Usuarios y Rangos CM</h1>
           <p style={{ color: 'var(--muted)', fontSize: 13, marginTop: 4 }}>Gestión de usuarios, permisos y rangos de CM</p>
         </div>
         <button onClick={() => { setShowCreate(true); setMsg(null) }} style={{

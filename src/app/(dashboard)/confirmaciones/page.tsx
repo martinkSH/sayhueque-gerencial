@@ -1,7 +1,6 @@
 import { createClient } from '@/lib/supabase/server'
-import { getUserProfile } from '@/lib/user-context'
 import { CheckCircle2, TrendingUp } from 'lucide-react'
-import { format } from 'date-fns'
+import ConfirmacionesClient from './ConfirmacionesClient'
 
 export const dynamic = 'force-dynamic'
 
@@ -131,7 +130,7 @@ export default async function ConfirmacionesPage({
         </div>
       </div>
 
-      {/* SECCIÓN 1: Tabla área + temporada */}
+      {/* SECCIÓN 1: Tabla área + temporada con modal */}
       <div className="card" style={{ overflow: 'hidden' }}>
         <div style={{ padding: '14px 20px', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', gap: 8 }}>
           <CheckCircle2 size={15} style={{ color: 'var(--teal-400)' }} />
@@ -139,54 +138,13 @@ export default async function ConfirmacionesPage({
             Confirmados (QU → OK) — últimos {dias} días
           </span>
         </div>
-        <div style={{ overflowX: 'auto' }}>
-          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
-            <thead>
-              <tr style={{ background: 'var(--surface2)' }}>
-                {['Área', 'Temporada', 'Confirmados', 'Venta Total (USD)'].map(h => (
-                  <th key={h} style={{
-                    padding: '10px 20px',
-                    textAlign: h === 'Área' || h === 'Temporada' ? 'left' : 'right',
-                    color: 'var(--muted)', fontWeight: 500, fontSize: 12, whiteSpace: 'nowrap',
-                  }}>{h}</th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {filas7d.length === 0 ? (
-                <tr>
-                  <td colSpan={4} style={{ padding: '28px 20px', textAlign: 'center', color: 'var(--muted)' }}>
-                    Sin confirmaciones en los últimos {dias} días
-                  </td>
-                </tr>
-              ) : (
-                <>
-                  {filas7d.map((r, i) => (
-                    <tr key={`${r.area}-${r.temporada}`} style={{
-                      borderTop: '1px solid var(--border)',
-                      background: i % 2 === 0 ? 'transparent' : 'rgba(255,255,255,0.01)',
-                    }}>
-                      <td style={{ padding: '10px 20px', color: 'var(--text)' }}>{r.area}</td>
-                      <td style={{ padding: '10px 20px' }}>
-                        <span style={{
-                          fontSize: 11, padding: '2px 8px', borderRadius: 6,
-                          background: 'rgba(13,148,136,0.15)', color: 'var(--teal-400)', fontWeight: 500,
-                        }}>{r.temporada}</span>
-                      </td>
-                      <td style={{ padding: '10px 20px', textAlign: 'right', color: 'var(--text)', fontFamily: 'var(--font-mono)', fontWeight: 500 }}>{r.count}</td>
-                      <td style={{ padding: '10px 20px', textAlign: 'right', color: r.venta < 0 ? '#f87171' : '#4ade80', fontFamily: 'var(--font-mono)', fontWeight: 500 }}>{formatUSD(r.venta)}</td>
-                    </tr>
-                  ))}
-                  <tr style={{ borderTop: '2px solid var(--border)', background: 'var(--surface2)' }}>
-                    <td style={{ padding: '10px 20px', color: 'var(--text)', fontWeight: 700 }} colSpan={2}>TOTAL EMPRESA</td>
-                    <td style={{ padding: '10px 20px', textAlign: 'right', color: 'var(--text)', fontFamily: 'var(--font-mono)', fontWeight: 700 }}>{totalCount7d}</td>
-                    <td style={{ padding: '10px 20px', textAlign: 'right', color: '#4ade80', fontFamily: 'var(--font-mono)', fontWeight: 700 }}>{formatUSD(totalVenta7d)}</td>
-                  </tr>
-                </>
-              )}
-            </tbody>
-          </table>
-        </div>
+        <ConfirmacionesClient 
+          filas={filas7d}
+          totalCount={totalCount7d}
+          totalVenta={totalVenta7d}
+          dias={dias}
+          uploadId={lastUpload.id}
+        />
       </div>
 
       {/* SECCIÓN 2: Acumulado 26/27 en adelante */}

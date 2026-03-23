@@ -47,10 +47,10 @@ export default function ConfirmacionesClient({
     const since = new Date()
     since.setDate(since.getDate() - dias)
 
-    // Traer detalle de files confirmados
-    const { data } = await supabase
+    // Traer file_codes de la vista de confirmados
+    const { data: confirmadosData } = await supabase
       .from('v_confirmados_qu_ok')
-      .select('file_code, booking_name, area, temporada, date_of_change, venta, operador')
+      .select('file_code, date_of_change, venta')
       .eq('upload_id', uploadId)
       .eq('rn', 1)
       .eq('area', area)
@@ -58,13 +58,14 @@ export default function ConfirmacionesClient({
       .gte('date_of_change', since.toISOString())
       .order('date_of_change', { ascending: false })
 
-    if (!data) {
+    if (!confirmadosData || confirmadosData.length === 0) {
       setLoading(false)
+      setModalData({ area, temporada, files: [] })
       return
     }
 
-    // Traer info adicional de team_leader_rows
-    const fileCodes = data.map(f => f.file_code)
+    // Traer info completa de team_leader_rows usando los file_codes
+    const fileCodes = confirmadosData.map(f => f.file_code)
     const { data: tlData } = await supabase
       .from('team_leader_rows')
       .select('file_code, booking_name, cliente, vendedor')
@@ -73,13 +74,14 @@ export default function ConfirmacionesClient({
 
     const tlMap = new Map(tlData?.map(t => [t.file_code, t]) || [])
 
-    const files: FileDetalle[] = data.map(f => {
+    // Combinar datos
+    const files: FileDetalle[] = confirmadosData.map(f => {
       const tl = tlMap.get(f.file_code)
       return {
         file_code: f.file_code,
         booking_name: tl?.booking_name || null,
         cliente: tl?.cliente || null,
-        vendedor: f.operador || tl?.vendedor || null,
+        vendedor: tl?.vendedor || null,
         date_of_change: f.date_of_change,
         venta: f.venta || 0,
       }

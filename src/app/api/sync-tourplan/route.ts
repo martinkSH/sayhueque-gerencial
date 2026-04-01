@@ -30,8 +30,27 @@ export async function POST(req: Request) {
   }
 
   try {
-    // ← ÚNICO CAMBIO: fetchTourplanData ahora retorna dateRange también
     const { teamLeader, audit, fetchedAt, dateRange } = await fetchTourplanData()
+
+    // ── Aplicar departamentos virtuales ──────────────────────────────────
+    const { data: deptosVirtuales } = await supabase
+      .from('config_departamentos_virtuales')
+      .select('*')
+      .eq('activo', true)
+
+    if (deptosVirtuales && deptosVirtuales.length > 0) {
+      teamLeader.forEach(row => {
+        if (!row.vendedor) return
+        
+        // Buscar si el vendedor está en algún depto virtual
+        for (const depto of deptosVirtuales) {
+          if (depto.vendedores.includes(row.vendedor)) {
+            row.booking_department = depto.departamento_nombre
+            break // Solo un depto virtual por viaje
+          }
+        }
+      })
+    }
 
     // Crear upload record
     const { data: upload, error: upErr } = await supabase
@@ -58,7 +77,7 @@ export async function POST(req: Request) {
       }
     }
 
-    // Insertar TL rows
+    // Insertar TL rows (ya con departamentos virtuales aplicados)
     const tlRows = teamLeader.map(r => ({ ...r, upload_id: uploadId }))
     await batchUpsert(supabase, 'team_leader_rows', tlRows, 'upload_id,file_code')
 
@@ -74,14 +93,13 @@ export async function POST(req: Request) {
       await batchUpsert(supabase, 'bookings_audit_rows', auditRows, 'upload_id,file_code,date_of_change')
     }
 
-    // ← ÚNICO CAMBIO: retornar dateRange también
     return NextResponse.json({ 
       ok: true, 
       fetchedAt, 
       teamLeader: tlRows.length, 
       audit: audit.length, 
       uploadId,
-      dateRange  // ← NUEVO: para que el frontend lo muestre
+      dateRange
     })
   } catch (err: any) {
     console.error('[sync-tourplan]', err)

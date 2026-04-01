@@ -1,6 +1,7 @@
 import { createClient } from '@/lib/supabase/server'
 import { getUserProfile, expandAreas } from '@/lib/user-context'
 import ClientesClient from './ClientesClient'
+import SyncQuotesButton from '@/components/SyncQuotesButton'
 
 export const dynamic = 'force-dynamic'
 
@@ -58,16 +59,25 @@ export default async function ClientesPage({
   const areaFiltro = searchParams.area ?? areaOptions[0] ?? 'B2C'
 
   return (
-    <ClientesClient
-      uploadId={uploadId}
-      temp={temp}
-      areaFiltro={areaFiltro}
-      areaOptions={areaOptions}
-      temporadas={TEMPORADAS}
-      fechaDesde={fechaDesde}
-      fechaHasta={fechaHasta}
-      isAdmin={isAdmin}
-      expandedUserAreas={expandedUserAreas}
-    />
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+      {/* Botón Sync Quotes - Solo para admins */}
+      {isAdmin && (
+        <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+          <SyncQuotesButton />
+        </div>
+      )}
+      
+      <ClientesClient
+        uploadId={uploadId}
+        temp={temp}
+        areaFiltro={areaFiltro}
+        areaOptions={areaOptions}
+        temporadas={TEMPORADAS}
+        fechaDesde={fechaDesde}
+        fechaHasta={fechaHasta}
+        isAdmin={isAdmin}
+        expandedUserAreas={expandedUserAreas}
+      />
+    </div>
   )
 }

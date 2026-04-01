@@ -64,64 +64,145 @@ export default function Sidebar({ user }: Props) {
       display: 'flex', flexDirection: 'column',
       height: '100vh', overflow: 'hidden',
     }}>
-      {/* Logo */}
+      {/* Logo ATLAS CORE */}
       <div style={{ padding: '24px 20px 16px', borderBottom: '1px solid var(--border)' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+          {/* Logo icono */}
           <div style={{
-            width: 32, height: 32, borderRadius: 8, background: 'var(--teal-600)',
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-            fontWeight: 700, fontSize: 14, color: 'white',
-          }}>SH</div>
+            width: 36, 
+            height: 36, 
+            borderRadius: 8, 
+            background: 'linear-gradient(135deg, #3B82F6 0%, #14B8A6 100%)',
+            display: 'flex', 
+            alignItems: 'center', 
+            justifyContent: 'center',
+            fontWeight: 700, 
+            fontSize: 18, 
+            color: 'white',
+            boxShadow: '0 2px 8px rgba(59, 130, 246, 0.3)',
+          }}>
+            A
+          </div>
+          
+          {/* Texto */}
           <div>
-            <div style={{ fontWeight: 600, fontSize: 13, color: 'var(--text)' }}>Say Hueque</div>
-            <div style={{ fontSize: 11, color: 'var(--muted)' }}>Gerencial</div>
-            <div style={{ fontSize: 9, color: 'var(--border)', marginTop: 1, letterSpacing: '0.02em' }}>dev. Martin Kravez</div>
+            <div style={{ 
+              display: 'flex', 
+              alignItems: 'center', 
+              gap: 6,
+              marginBottom: 2,
+            }}>
+              <span style={{ 
+                fontWeight: 700, 
+                fontSize: 14, 
+                color: '#3B82F6',
+                letterSpacing: '-0.02em',
+              }}>
+                ATLAS
+              </span>
+              <span style={{ 
+                color: 'var(--border)', 
+                fontSize: 12,
+              }}>
+                |
+              </span>
+              <span style={{ 
+                fontWeight: 600, 
+                fontSize: 14, 
+                color: 'var(--teal-400)',
+              }}>
+                CORE
+              </span>
+            </div>
+            <div style={{ fontSize: 9, color: 'var(--border)', letterSpacing: '0.02em' }}>
+              dev. Martin Kravez
+            </div>
           </div>
         </div>
       </div>
 
-      {/* Nav */}
-      <nav style={{ flex: 1, padding: '12px 10px', overflowY: 'auto' }}>
-        <div style={{ fontSize: 10, fontWeight: 600, color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '0.08em', padding: '0 10px 8px' }}>
-          Reportes
+      {/* User info */}
+      <div style={{ padding: '16px 20px', borderBottom: '1px solid var(--border)' }}>
+        <div style={{ fontSize: 12, fontWeight: 500, color: 'var(--text)', marginBottom: 4 }}>
+          {user.name}
         </div>
-        {navItems.map(item => <NavLink key={item.href} {...item} />)}
+        <div style={{ fontSize: 11, color: 'var(--muted)' }}>{user.email}</div>
+        {areaLabel && (
+          <div style={{
+            marginTop: 8, padding: '4px 8px', borderRadius: 6,
+            fontSize: 10, background: 'rgba(20, 184, 166, 0.1)',
+            color: 'var(--teal-400)', border: '1px solid rgba(20, 184, 166, 0.2)',
+            display: 'inline-block',
+          }}>
+            {areaLabel}
+          </div>
+        )}
+      </div>
 
-        <div style={{ height: 1, background: 'var(--border)', margin: '12px 10px' }} />
-        <div style={{ fontSize: 10, fontWeight: 600, color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '0.08em', padding: '0 10px 8px' }}>
-          Sistema
-        </div>
-        {isAdmin && <NavLink href="/subir" label="Subir Excel" icon={Upload} />}
-        {isAdmin && <NavLink href="/admin" label="Admin" icon={Settings} />}
-      </nav>
-
-      {/* User */}
-      <div style={{ padding: '12px 14px', borderTop: '1px solid var(--border)', display: 'flex', alignItems: 'center', gap: 10 }}>
+      {/* REPORTES */}
+      <div style={{
+        flex: 1, padding: '12px 16px', overflowY: 'auto',
+      }}>
         <div style={{
-          width: 30, height: 30, borderRadius: '50%',
-          background: isAdmin ? 'var(--teal-900)' : 'rgba(139,92,246,0.15)',
-          border: `1px solid ${isAdmin ? 'var(--teal-700)' : 'rgba(139,92,246,0.4)'}`,
-          display: 'flex', alignItems: 'center', justifyContent: 'center',
-          fontSize: 11, fontWeight: 600,
-          color: isAdmin ? 'var(--teal-400)' : '#a78bfa', flexShrink: 0,
+          fontSize: 10, fontWeight: 600, color: 'var(--muted)',
+          marginBottom: 8, paddingLeft: 4, letterSpacing: '0.05em',
         }}>
-          {(user.name || user.email).slice(0, 2).toUpperCase()}
+          REPORTES
         </div>
-        <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ fontSize: 12, fontWeight: 500, color: 'var(--text)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-            {user.name || user.email}
-          </div>
-          <div style={{ fontSize: 10, color: 'var(--muted)' }}>
-            {isAdmin ? 'Admin' : areaLabel ?? 'Comercial'}
-          </div>
+        <div style={{ display: 'flex', flexDirection: 'column' }}>
+          {navItems.map(item => (
+            <NavLink key={item.href} {...item} />
+          ))}
         </div>
-        <button onClick={handleLogout} style={{
-          background: 'none', border: 'none', cursor: 'pointer',
-          color: 'var(--muted)', padding: 4, borderRadius: 4,
-          display: 'flex', alignItems: 'center',
-        }} title="Cerrar sesión">
-          <LogOut size={14} />
-        </button>
+      </div>
+
+      {/* SISTEMA */}
+      <div style={{ borderTop: '1px solid var(--border)', padding: '12px 16px' }}>
+        <div style={{
+          fontSize: 10, fontWeight: 600, color: 'var(--muted)',
+          marginBottom: 8, paddingLeft: 4, letterSpacing: '0.05em',
+        }}>
+          SISTEMA
+        </div>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+          <Link href="/subir" style={{
+            display: 'flex', alignItems: 'center', gap: 10,
+            padding: '8px 10px', borderRadius: 8,
+            fontSize: 13, fontWeight: pathname === '/subir' ? 500 : 400,
+            color: pathname === '/subir' ? 'var(--teal-400)' : 'var(--text-dim)',
+            background: pathname === '/subir' ? 'rgba(20, 184, 166, 0.08)' : 'transparent',
+            textDecoration: 'none', transition: 'all 0.15s',
+          }}>
+            <Upload size={16} style={{ opacity: pathname === '/subir' ? 1 : 0.7 }} />
+            Subir Excel
+          </Link>
+
+          {isAdmin && (
+            <Link href="/admin" style={{
+              display: 'flex', alignItems: 'center', gap: 10,
+              padding: '8px 10px', borderRadius: 8,
+              fontSize: 13, fontWeight: pathname.startsWith('/admin') ? 500 : 400,
+              color: pathname.startsWith('/admin') ? 'var(--teal-400)' : 'var(--text-dim)',
+              background: pathname.startsWith('/admin') ? 'rgba(20, 184, 166, 0.08)' : 'transparent',
+              textDecoration: 'none', transition: 'all 0.15s',
+            }}>
+              <Settings size={16} style={{ opacity: pathname.startsWith('/admin') ? 1 : 0.7 }} />
+              Admin
+            </Link>
+          )}
+
+          <button onClick={handleLogout} style={{
+            display: 'flex', alignItems: 'center', gap: 10,
+            padding: '8px 10px', borderRadius: 8, marginTop: 4,
+            fontSize: 13, color: 'var(--text-dim)',
+            background: 'transparent', border: 'none',
+            cursor: 'pointer', textAlign: 'left', width: '100%',
+            transition: 'all 0.15s',
+          }}>
+            <LogOut size={16} style={{ opacity: 0.7 }} />
+            Cerrar sesión
+          </button>
+        </div>
       </div>
     </aside>
   )

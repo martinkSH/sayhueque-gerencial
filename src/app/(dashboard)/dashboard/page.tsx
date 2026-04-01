@@ -1,5 +1,6 @@
 import { createClient } from '@/lib/supabase/server'
 import { getUserProfile, expandAreas, B2C_AREAS } from '@/lib/user-context'
+import { displayAreaName } from '@/lib/area-display'
 import { Calendar, CheckCircle2, TrendingUp, Upload, Users } from 'lucide-react'
 import Link from 'next/link'
 import { format } from 'date-fns'
@@ -333,7 +334,7 @@ export default async function DashboardPage({
             <tbody>
               {enCursoAreas.map(([area, d], i) => (
                 <tr key={area} style={{ borderTop: '1px solid var(--border)', background: i % 2 === 0 ? 'transparent' : 'rgba(255,255,255,0.01)' }}>
-                  <td style={{ padding: '9px 20px', color: 'var(--text)' }}>{area}</td>
+                  <td style={{ padding: '9px 20px', color: 'var(--text)' }}>{displayAreaName(area)}</td>
                   <td style={{ padding: '9px 20px', textAlign: 'right', color: 'var(--text)', fontFamily: 'var(--font-mono)' }}>{d.viajes}</td>
                   <td style={{ padding: '9px 20px', textAlign: 'right', color: 'var(--muted)', fontFamily: 'var(--font-mono)' }}>{d.pax}</td>
                 </tr>
@@ -360,10 +361,11 @@ export default async function DashboardPage({
             const pct = Math.max(0, (row.ganancia / maxGan) * 100)
             const cm = row.venta > 0 ? row.ganancia / row.venta : 0
             const isB2C = row.area.startsWith('B2C')
+            const displayName = isB2C ? row.area : displayAreaName(row.area)
             return (
               <div key={row.area}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
-                  <span style={{ fontSize: 13, color: isB2C ? 'var(--teal-400)' : 'var(--text)', fontWeight: isB2C ? 600 : 400 }}>{row.area}</span>
+                  <span style={{ fontSize: 13, color: isB2C ? 'var(--teal-400)' : 'var(--text)', fontWeight: isB2C ? 600 : 400 }}>{displayName}</span>
                   <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
                     <span style={{ fontSize: 11, color: 'var(--muted)', fontFamily: 'var(--font-mono)' }}>CM {(cm * 100).toFixed(1)}%</span>
                     <span style={{ fontSize: 13, fontWeight: 500, color: row.ganancia < 0 ? '#f87171' : 'var(--text)', fontFamily: 'var(--font-mono)' }}>{formatUSD(row.ganancia)}</span>
@@ -412,10 +414,11 @@ export default async function DashboardPage({
             const pct = Math.max(0, (row.ganancia / maxGan) * 100)
             const cm = row.venta > 0 ? row.ganancia / row.venta : 0
             const isB2C = row.area.startsWith('B2C')
+            const displayName = isB2C ? row.area : displayAreaName(row.area)
             return (
               <div key={row.area}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
-                  <span style={{ fontSize: 13, color: isB2C ? '#a78bfa' : 'var(--text)', fontWeight: isB2C ? 600 : 400 }}>{row.area}</span>
+                  <span style={{ fontSize: 13, color: isB2C ? '#a78bfa' : 'var(--text)', fontWeight: isB2C ? 600 : 400 }}>{displayName}</span>
                   <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
                     <span style={{ fontSize: 11, color: 'var(--muted)', fontFamily: 'var(--font-mono)' }}>CM {(cm * 100).toFixed(1)}%</span>
                     <span style={{ fontSize: 13, fontWeight: 500, color: row.ganancia < 0 ? '#f87171' : 'var(--text)', fontFamily: 'var(--font-mono)' }}>{formatUSD(row.ganancia)}</span>
@@ -464,10 +467,11 @@ export default async function DashboardPage({
               const pct = Math.max(0, (row.ganancia / maxGan) * 100)
               const cm = row.venta > 0 ? row.ganancia / row.venta : 0
               const isB2C = row.area.startsWith('B2C')
+              const displayName = isB2C ? row.area : displayAreaName(row.area)
               return (
                 <div key={row.area}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
-                    <span style={{ fontSize: 13, color: isB2C ? 'var(--teal-400)' : 'var(--text)', fontWeight: isB2C ? 600 : 400 }}>{row.area}</span>
+                    <span style={{ fontSize: 13, color: isB2C ? 'var(--teal-400)' : 'var(--text)', fontWeight: isB2C ? 600 : 400 }}>{displayName}</span>
                     <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
                       <span style={{ fontSize: 11, color: 'var(--muted)', fontFamily: 'var(--font-mono)' }}>CM {(cm * 100).toFixed(1)}%</span>
                       <span style={{ fontSize: 13, fontWeight: 500, color: row.ganancia < 0 ? '#f87171' : 'var(--text)', fontFamily: 'var(--font-mono)' }}>{formatUSD(row.ganancia)}</span>
@@ -518,10 +522,11 @@ export default async function DashboardPage({
               const pct = Math.max(0, (row.ganancia / maxGan) * 100)
               const cm = row.venta > 0 ? row.ganancia / row.venta : 0
               const isB2C = row.area.startsWith('B2C')
+              const displayName = isB2C ? row.area : displayAreaName(row.area)
               return (
                 <div key={row.area}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
-                    <span style={{ fontSize: 13, color: isB2C ? '#a78bfa' : 'var(--text)', fontWeight: isB2C ? 600 : 400 }}>{row.area}</span>
+                    <span style={{ fontSize: 13, color: isB2C ? '#a78bfa' : 'var(--text)', fontWeight: isB2C ? 600 : 400 }}>{displayName}</span>
                     <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
                       <span style={{ fontSize: 11, color: 'var(--muted)', fontFamily: 'var(--font-mono)' }}>CM {(cm * 100).toFixed(1)}%</span>
                       <span style={{ fontSize: 13, fontWeight: 500, color: row.ganancia < 0 ? '#f87171' : 'var(--text)', fontFamily: 'var(--font-mono)' }}>{formatUSD(row.ganancia)}</span>

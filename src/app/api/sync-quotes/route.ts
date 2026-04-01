@@ -11,7 +11,7 @@ const sql = require('mssql')
 const config = {
   server:   'LA-SAYHUE.data.tourplan.net',
   port:     50409,
-  database: 'DBSAYHUEQUE',
+  database: 'LA-SAYHUE',  // ← CORRECTO
   user:     'excelLA-SAYHUE',
   password: 'o6rmFv7$RJnp14NzqI18',
   options: {

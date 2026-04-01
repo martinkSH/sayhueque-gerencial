@@ -137,17 +137,8 @@ async function buildDashboardSheet(wb: ExcelJS.Workbook, supabase: any, uploadId
     ] as [string, AreaRow[], string][]) {
       if (data.length === 0) continue
 
-      // Agrupar B2C
-      const b2c = { area: 'B2C', venta: 0, ganancia: 0 }
-      const otros: AreaRow[] = []
-      data.forEach(r => {
-        if (B2C_AREAS.includes(r.area)) { b2c.venta += r.venta; b2c.ganancia += r.ganancia }
-        else otros.push(r)
-      })
-      const sorted: AreaRow[] = [
-        ...(b2c.venta > 0 ? [b2c] : []),
-        ...otros,
-      ].sort((a, b) => b.ganancia - a.ganancia)
+      // NO agrupar B2C - mostrar áreas separadas
+      const sorted: AreaRow[] = [...data].sort((a, b) => b.ganancia - a.ganancia)
       const totalV = sorted.reduce((s, r) => s + r.venta, 0)
       const totalG = sorted.reduce((s, r) => s + r.ganancia, 0)
 

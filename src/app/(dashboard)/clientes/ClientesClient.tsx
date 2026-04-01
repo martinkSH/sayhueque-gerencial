@@ -9,7 +9,15 @@ function formatUSD(n: number) {
   return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 }).format(n)
 }
 
-type CRow = { cliente: string; viajes: number; pax: number; venta: number; ganancia: number }
+type CRow = { 
+  cliente: string
+  viajes: number
+  quotes: number
+  tasa_conversion: number
+  pax: number
+  venta: number
+  ganancia: number
+}
 
 export default function ClientesClient({
   uploadId,
@@ -78,7 +86,9 @@ export default function ClientesClient({
   const totalVenta = clientes.reduce((s, r) => s + r.venta, 0)
   const totalGanancia = clientes.reduce((s, r) => s + r.ganancia, 0)
   const totalViajes = clientes.reduce((s, r) => s + r.viajes, 0)
+  const totalQuotes = clientes.reduce((s, r) => s + r.quotes, 0)
   const totalCM = totalVenta > 0 ? totalGanancia / totalVenta : 0
+  const totalConversion = totalQuotes > 0 ? totalViajes / totalQuotes : 0
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
@@ -201,7 +211,7 @@ export default function ClientesClient({
             <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
               <thead>
                 <tr style={{ background: 'var(--surface2)' }}>
-                  {['#', 'Cliente', 'Viajes', 'Pax', 'Venta', 'Ganancia', 'CM'].map(h => (
+                  {['#', 'Cliente', 'Viajes', 'Quotes', 'Conv %', 'Pax', 'Venta', 'Ganancia', 'CM'].map(h => (
                     <th key={h} style={{
                       padding: '10px 20px',
                       textAlign: h === 'Cliente' ? 'left' : 'right',
@@ -213,7 +223,7 @@ export default function ClientesClient({
               <tbody>
                 {clientes.length === 0 ? (
                   <tr>
-                    <td colSpan={7} style={{ padding: '40px 20px', textAlign: 'center', color: 'var(--muted)' }}>
+                    <td colSpan={9} style={{ padding: '40px 20px', textAlign: 'center', color: 'var(--muted)' }}>
                       No hay clientes en este rango de fechas
                     </td>
                   </tr>
@@ -221,6 +231,7 @@ export default function ClientesClient({
                   <>
                     {clientes.map((r, i) => {
                       const cm = r.venta > 0 ? r.ganancia / r.venta : 0
+                      const conv = r.quotes > 0 ? (r.viajes / r.quotes) * 100 : 0
                       return (
                         <tr key={i} style={{
                           borderTop: '1px solid var(--border)',
@@ -229,6 +240,12 @@ export default function ClientesClient({
                           <td style={{ padding: '10px 20px', textAlign: 'right', color: 'var(--muted)', fontFamily: 'var(--font-mono)', fontSize: 12 }}>{i + 1}</td>
                           <td style={{ padding: '10px 20px', color: 'var(--text)', fontWeight: 500 }}>{r.cliente}</td>
                           <td style={{ padding: '10px 20px', textAlign: 'right', color: 'var(--text)', fontFamily: 'var(--font-mono)' }}>{r.viajes}</td>
+                          <td style={{ padding: '10px 20px', textAlign: 'right', color: 'var(--muted)', fontFamily: 'var(--font-mono)' }}>{r.quotes}</td>
+                          <td style={{ padding: '10px 20px', textAlign: 'right', fontFamily: 'var(--font-mono)', fontWeight: 500 }}>
+                            <span style={{ color: conv >= 50 ? '#4ade80' : conv >= 30 ? '#fbbf24' : '#f87171' }}>
+                              {conv.toFixed(0)}%
+                            </span>
+                          </td>
                           <td style={{ padding: '10px 20px', textAlign: 'right', color: 'var(--muted)', fontFamily: 'var(--font-mono)' }}>{r.pax}</td>
                           <td style={{ padding: '10px 20px', textAlign: 'right', color: 'var(--text)', fontFamily: 'var(--font-mono)', fontWeight: 500 }}>{formatUSD(r.venta)}</td>
                           <td style={{ padding: '10px 20px', textAlign: 'right', color: r.ganancia < 0 ? '#f87171' : '#4ade80', fontFamily: 'var(--font-mono)', fontWeight: 500 }}>{formatUSD(r.ganancia)}</td>
@@ -246,6 +263,10 @@ export default function ClientesClient({
                       <td style={{ padding: '10px 20px' }}></td>
                       <td style={{ padding: '10px 20px', color: 'var(--text)', fontWeight: 700 }}>TOTAL</td>
                       <td style={{ padding: '10px 20px', textAlign: 'right', fontFamily: 'var(--font-mono)', fontWeight: 700, color: 'var(--text)' }}>{totalViajes}</td>
+                      <td style={{ padding: '10px 20px', textAlign: 'right', fontFamily: 'var(--font-mono)', fontWeight: 700, color: 'var(--text)' }}>{totalQuotes}</td>
+                      <td style={{ padding: '10px 20px', textAlign: 'right', fontFamily: 'var(--font-mono)', fontWeight: 700, color: 'var(--teal-400)' }}>
+                        {(totalConversion * 100).toFixed(0)}%
+                      </td>
                       <td style={{ padding: '10px 20px' }}></td>
                       <td style={{ padding: '10px 20px', textAlign: 'right', fontFamily: 'var(--font-mono)', fontWeight: 700, color: 'var(--text)' }}>{formatUSD(totalVenta)}</td>
                       <td style={{ padding: '10px 20px', textAlign: 'right', fontFamily: 'var(--font-mono)', fontWeight: 700, color: '#4ade80' }}>{formatUSD(totalGanancia)}</td>

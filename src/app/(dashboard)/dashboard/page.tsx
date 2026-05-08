@@ -34,7 +34,6 @@ export default async function DashboardPage({
   const areaDetalle = searchParams.area ?? null
   const today = new Date().toISOString().slice(0, 10)
 
-  // Áreas del usuario comercial (null = todas = admin)
   const p_areas: string[] | null = isAdmin
     ? null
     : expandAreas(userProfile?.areas ?? [])
@@ -62,40 +61,10 @@ export default async function DashboardPage({
   const since7days = new Date()
   since7days.setDate(since7days.getDate() - 7)
 
-  // CP1: Confirmados QU→OK últimos 7 días
-  let confirmadosQuery = supabase
-    .from('v_confirmados_qu_ok')
-    .select('venta, area')
-    .eq('upload_id', uploadId)
-    .eq('rn', 1)
-    .gte('date_of_change', since7days.toISOString())
+  // ── QUERIES EN PARALELO ────────────────────────────────────────────────
+  // Antes: 8 queries secuenciales (~800ms)
+  // Ahora: todas en paralelo (~150-200ms)
 
-  const { data: confirmados } = await confirmadosQuery
-
-  const confirmadosFiltrados = p_areas
-    ? (confirmados ?? []).filter(r => p_areas.includes(r.area ?? ''))
-    : (confirmados ?? [])
-
-  const totalConfirmados = confirmadosFiltrados.length
-  const ventaConfirmados = confirmadosFiltrados.reduce((s, r) => s + (r.venta ?? 0), 0)
-
-  // Futuros via RPC
-  const { data: futurosKpiRaw } = await supabase
-    .rpc('get_futuros_kpi', {
-      p_upload_id: uploadId,
-      p_today: today,
-      p_fin: FIN_TEMPORADA,
-      p_areas: p_areas,
-    })
-    .single()
-
-  const futurosKpi = futurosKpiRaw as { viajes: number; venta: number; ganancia: number } | null
-  const totalFuturos = futurosKpi?.viajes ?? 0
-  const ventaFutura = futurosKpi?.venta ?? 0
-  const gananciaFutura = futurosKpi?.ganancia ?? 0
-  const cmFutura = ventaFutura > 0 ? gananciaFutura / ventaFutura : 0
-
-  // En curso hoy
   let enCursoQuery = supabase
     .from('team_leader_rows')
     .select('file_code, booking_branch, cant_pax')
@@ -107,8 +76,74 @@ export default async function DashboardPage({
 
   if (p_areas) enCursoQuery = enCursoQuery.in('booking_branch', p_areas)
 
-  const { data: enCursoRaw } = await enCursoQuery
+  const [
+    { data: confirmados },
+    { data: futurosKpiRaw },
+    { data: enCursoRaw },
+    { data: gananciaPorAreaRaw },
+    { data: ganancia2627Raw },
+    { data: gananciaNetaRaw },
+    { data: gananciaNet2627Raw },
+    { data: areaStats2526Raw },
+    { data: areaStats2627Raw },
+  ] = await Promise.all([
+    // 1. Confirmados QU→OK últimos 7 días
+    supabase
+      .from('v_confirmados_qu_ok')
+      .select('venta, area')
+      .eq('upload_id', uploadId)
+      .eq('rn', 1)
+      .gte('date_of_change', since7days.toISOString()),
 
+    // 2. Futuros KPI
+    supabase
+      .rpc('get_futuros_kpi', {
+        p_upload_id: uploadId,
+        p_today: today,
+        p_fin: FIN_TEMPORADA,
+        p_areas: p_areas,
+      })
+      .single(),
+
+    // 3. En curso hoy
+    enCursoQuery,
+
+    // 4. Ganancia 25/26 BRUTO
+    supabase.rpc('get_ganancia_por_area', { p_upload_id: uploadId, p_areas: p_areas }),
+
+    // 5. Ganancia 26/27 BRUTO
+    supabase.rpc('get_ganancia_por_area', { p_upload_id: uploadId, p_areas: p_areas, p_temporada: '26/27' }),
+
+    // 6. Ganancia 25/26 NETO
+    supabase.rpc('get_ganancia_neta_por_area', { p_upload_id: uploadId, p_areas: p_areas }),
+
+    // 7. Ganancia 26/27 NETO
+    supabase.rpc('get_ganancia_neta_por_area', { p_upload_id: uploadId, p_areas: p_areas, p_temporada: '26/27' }),
+
+    // 8. Stats 25/26
+    supabase.rpc('get_stats_por_area', { p_upload_id: uploadId, p_areas: p_areas, p_temporada: '25/26' }),
+
+    // 9. Stats 26/27
+    supabase.rpc('get_stats_por_area', { p_upload_id: uploadId, p_areas: p_areas, p_temporada: '26/27' }),
+  ])
+
+  // ── PROCESAR RESULTADOS ────────────────────────────────────────────────
+
+  // Confirmados
+  const confirmadosFiltrados = p_areas
+    ? (confirmados ?? []).filter(r => p_areas.includes(r.area ?? ''))
+    : (confirmados ?? [])
+  const totalConfirmados = confirmadosFiltrados.length
+  const ventaConfirmados = confirmadosFiltrados.reduce((s, r) => s + (r.venta ?? 0), 0)
+
+  // Futuros
+  const futurosKpi = futurosKpiRaw as { viajes: number; venta: number; ganancia: number } | null
+  const totalFuturos = futurosKpi?.viajes ?? 0
+  const ventaFutura = futurosKpi?.venta ?? 0
+  const gananciaFutura = futurosKpi?.ganancia ?? 0
+  const cmFutura = ventaFutura > 0 ? gananciaFutura / ventaFutura : 0
+
+  // En curso hoy
   const enCursoMap = new Map<string, { pax: number; area: string }>()
   enCursoRaw?.forEach(r => {
     if (!enCursoMap.has(r.file_code))
@@ -126,103 +161,30 @@ export default async function DashboardPage({
   })
   const enCursoAreas = Array.from(enCursoPorArea.entries()).sort((a, b) => b[1].viajes - a[1].viajes)
 
-  // Ganancia por área 25/26 via RPC — BRUTO
-  const { data: gananciaPorAreaRaw } = await supabase
-    .rpc('get_ganancia_por_area', { p_upload_id: uploadId, p_areas: p_areas })
-
-  // Ganancia por área 26/27 via RPC — BRUTO
-  const { data: ganancia2627Raw } = await supabase
-    .rpc('get_ganancia_por_area', { p_upload_id: uploadId, p_areas: p_areas, p_temporada: '26/27' })
-
+  // ── Ganancia por área ──────────────────────────────────────────────────
   type AreaRow = { area: string; venta: number; ganancia: number }
-  const allAreas = (gananciaPorAreaRaw ?? []) as AreaRow[]
 
-  // Ganancia por área 25/26 via RPC — NETO
-  const { data: gananciaNetaRaw } = await supabase
-    .rpc('get_ganancia_neta_por_area', { p_upload_id: uploadId, p_areas: p_areas })
+  function buildGananciaAreas(raw: any): { sorted: AreaRow[]; totalVenta: number; totalGanancia: number; totalCM: number } {
+    const allAreas = (raw ?? []) as AreaRow[]
+    const b2c = { venta: 0, ganancia: 0 }
+    const otros: AreaRow[] = []
+    allAreas.forEach(row => {
+      if (B2C_AREAS.includes(row.area)) { b2c.venta += row.venta; b2c.ganancia += row.ganancia }
+      else otros.push(row)
+    })
+    const sorted: AreaRow[] = [
+      ...(b2c.venta > 0 || b2c.ganancia !== 0 ? [{ area: 'B2C (Web + Plataformas + Walk In)', ...b2c }] : []),
+      ...otros,
+    ].sort((a, b) => b.ganancia - a.ganancia)
+    const totalVenta = sorted.reduce((s, r) => s + r.venta, 0)
+    const totalGanancia = sorted.reduce((s, r) => s + r.ganancia, 0)
+    return { sorted, totalVenta, totalGanancia, totalCM: totalVenta > 0 ? totalGanancia / totalVenta : 0 }
+  }
 
-  // Ganancia por área 26/27 via RPC — NETO
-  const { data: gananciaNet2627Raw } = await supabase
-    .rpc('get_ganancia_neta_por_area', { p_upload_id: uploadId, p_areas: p_areas, p_temporada: '26/27' })
-
-  // Stats completos por área (viajes + pax) para AreasPanel
-  const { data: areaStats2526Raw } = await supabase
-    .rpc('get_stats_por_area', { p_upload_id: uploadId, p_areas: p_areas, p_temporada: '25/26' })
-  const { data: areaStats2627Raw } = await supabase
-    .rpc('get_stats_por_area', { p_upload_id: uploadId, p_areas: p_areas, p_temporada: '26/27' })
-
-  // Agrupar B2C — BRUTO
-  const b2c = { venta: 0, ganancia: 0 }
-  const otros: AreaRow[] = []
-  allAreas.forEach(row => {
-    if (B2C_AREAS.includes(row.area)) {
-      b2c.venta += row.venta
-      b2c.ganancia += row.ganancia
-    } else {
-      otros.push(row)
-    }
-  })
-  const areasSorted: AreaRow[] = [
-    ...(b2c.venta > 0 || b2c.ganancia !== 0 ? [{ area: 'B2C (Web + Plataformas + Walk In)', ...b2c }] : []),
-    ...otros,
-  ].sort((a, b) => b.ganancia - a.ganancia)
-
-  const totalVenta = areasSorted.reduce((s, r) => s + r.venta, 0)
-  const totalGanancia = areasSorted.reduce((s, r) => s + r.ganancia, 0)
-  const totalCM = totalVenta > 0 ? totalGanancia / totalVenta : 0
-
-  // Agrupar B2C — NETO
-  const allAreasNeta = (gananciaNetaRaw ?? []) as AreaRow[]
-  const b2cNeta = { venta: 0, ganancia: 0 }
-  const otrosNeta: AreaRow[] = []
-  allAreasNeta.forEach(row => {
-    if (B2C_AREAS.includes(row.area)) {
-      b2cNeta.venta += row.venta
-      b2cNeta.ganancia += row.ganancia
-    } else {
-      otrosNeta.push(row)
-    }
-  })
-  const areasNetaSorted: AreaRow[] = [
-    ...(b2cNeta.venta > 0 || b2cNeta.ganancia !== 0 ? [{ area: 'B2C (Web + Plataformas + Walk In)', ...b2cNeta }] : []),
-    ...otrosNeta,
-  ].sort((a, b) => b.ganancia - a.ganancia)
-
-  const totalVentaNeta = areasNetaSorted.reduce((s, r) => s + r.venta, 0)
-  const totalGananciaNeta = areasNetaSorted.reduce((s, r) => s + r.ganancia, 0)
-  const totalCMNeta = totalVentaNeta > 0 ? totalGananciaNeta / totalVentaNeta : 0
-
-  // ── 26/27 BRUTO ──────────────────────────────────────────────────────────
-  const allAreas2627 = (ganancia2627Raw ?? []) as AreaRow[]
-  const b2c2627 = { venta: 0, ganancia: 0 }
-  const otros2627: AreaRow[] = []
-  allAreas2627.forEach(row => {
-    if (B2C_AREAS.includes(row.area)) { b2c2627.venta += row.venta; b2c2627.ganancia += row.ganancia }
-    else otros2627.push(row)
-  })
-  const areasSorted2627: AreaRow[] = [
-    ...(b2c2627.venta > 0 || b2c2627.ganancia !== 0 ? [{ area: 'B2C (Web + Plataformas + Walk In)', ...b2c2627 }] : []),
-    ...otros2627,
-  ].sort((a, b) => b.ganancia - a.ganancia)
-  const totalVenta2627 = areasSorted2627.reduce((s, r) => s + r.venta, 0)
-  const totalGanancia2627 = areasSorted2627.reduce((s, r) => s + r.ganancia, 0)
-  const totalCM2627 = totalVenta2627 > 0 ? totalGanancia2627 / totalVenta2627 : 0
-
-  // ── 26/27 NETO ───────────────────────────────────────────────────────────
-  const allAreasNeta2627 = (gananciaNet2627Raw ?? []) as AreaRow[]
-  const b2cNeta2627 = { venta: 0, ganancia: 0 }
-  const otrosNeta2627: AreaRow[] = []
-  allAreasNeta2627.forEach(row => {
-    if (B2C_AREAS.includes(row.area)) { b2cNeta2627.venta += row.venta; b2cNeta2627.ganancia += row.ganancia }
-    else otrosNeta2627.push(row)
-  })
-  const areasNetaSorted2627: AreaRow[] = [
-    ...(b2cNeta2627.venta > 0 || b2cNeta2627.ganancia !== 0 ? [{ area: 'B2C (Web + Plataformas + Walk In)', ...b2cNeta2627 }] : []),
-    ...otrosNeta2627,
-  ].sort((a, b) => b.ganancia - a.ganancia)
-  const totalVentaNeta2627 = areasNetaSorted2627.reduce((s, r) => s + r.venta, 0)
-  const totalGananciaNeta2627 = areasNetaSorted2627.reduce((s, r) => s + r.ganancia, 0)
-  const totalCMNeta2627 = totalVentaNeta2627 > 0 ? totalGananciaNeta2627 / totalVentaNeta2627 : 0
+  const bruto2526 = buildGananciaAreas(gananciaPorAreaRaw)
+  const neto2526 = buildGananciaAreas(gananciaNetaRaw)
+  const bruto2627 = buildGananciaAreas(ganancia2627Raw)
+  const neto2627 = buildGananciaAreas(gananciaNet2627Raw)
 
   // AreasPanel stats
   type StatRow = { area: string; venta: number; ganancia: number; viajes: number; pax: number }
@@ -248,6 +210,71 @@ export default async function DashboardPage({
   const areas2627Stats = buildAreaStats(areaStats2627Raw as StatRow[], '26/27')
 
   const uploadDate = format(new Date(lastUpload.created_at), "d 'de' MMMM, HH:mm", { locale: es })
+
+  // ── Helper para renderizar sección de ganancia ─────────────────────────
+  function GananciaSection({ data, title, colorBar, colorBarB2C, colorGan, colorLabel, label }: {
+    data: { sorted: AreaRow[]; totalVenta: number; totalGanancia: number; totalCM: number }
+    title: string; colorBar: string; colorBarB2C: string; colorGan: string; colorLabel: string; label: string
+  }) {
+    if (data.sorted.length === 0) return null
+    return (
+      <div className="card" style={{ padding: '20px 24px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: label === '-IVA' ? 4 : 16 }}>
+          <TrendingUp size={14} style={{ color: colorLabel }} />
+          <h2 style={{ fontSize: 14, fontWeight: 600, color: 'var(--text)', margin: 0 }}>
+            {title} <span style={{ color: 'var(--muted)', fontWeight: 400 }}>({label})</span>
+          </h2>
+        </div>
+        {label === '-IVA' && (
+          <p style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 16, marginTop: 2 }}>
+            Venta y costo descontados de IVA · IVA venta B2C estimado ~4%
+          </p>
+        )}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+          {data.sorted.map(row => {
+            const maxGan = Math.max(...data.sorted.map(r => r.ganancia), 1)
+            const pct = Math.max(0, (row.ganancia / maxGan) * 100)
+            const cm = row.venta > 0 ? row.ganancia / row.venta : 0
+            const isB2C = row.area.startsWith('B2C')
+            const displayName = isB2C ? row.area : displayAreaName(row.area)
+            return (
+              <div key={row.area}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
+                  <span style={{ fontSize: 13, color: isB2C ? colorLabel : 'var(--text)', fontWeight: isB2C ? 600 : 400 }}>{displayName}</span>
+                  <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
+                    <span style={{ fontSize: 11, color: 'var(--muted)', fontFamily: 'var(--font-mono)' }}>CM {(cm * 100).toFixed(1)}%</span>
+                    <span style={{ fontSize: 13, fontWeight: 500, color: row.ganancia < 0 ? '#f87171' : 'var(--text)', fontFamily: 'var(--font-mono)' }}>{formatUSD(row.ganancia)}</span>
+                  </div>
+                </div>
+                <div style={{ height: 4, background: 'var(--surface2)', borderRadius: 2 }}>
+                  <div style={{ height: '100%', width: `${pct}%`, background: isB2C ? colorBarB2C : colorBar, borderRadius: 2 }} />
+                </div>
+              </div>
+            )
+          })}
+          <div style={{ marginTop: 8, paddingTop: 12, borderTop: '2px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--text)' }}>
+              {isAdmin ? 'TOTAL EMPRESA' : 'TOTAL'}
+            </span>
+            <div style={{ display: 'flex', gap: 20, alignItems: 'center' }}>
+              <div style={{ textAlign: 'right' }}>
+                <div style={{ fontSize: 10, color: 'var(--muted)' }}>{label === '-IVA' ? 'Venta Neta' : 'Venta'}</div>
+                <div style={{ fontSize: 13, fontFamily: 'var(--font-mono)', color: 'var(--text)' }}>{formatUSD(data.totalVenta)}</div>
+              </div>
+              <div style={{ textAlign: 'right' }}>
+                <div style={{ fontSize: 10, color: 'var(--muted)' }}>{label === '-IVA' ? 'Ganancia Neta' : 'Ganancia'}</div>
+                <div style={{ fontSize: 13, fontFamily: 'var(--font-mono)', fontWeight: 700, color: colorGan }}>{formatUSD(data.totalGanancia)}</div>
+              </div>
+              <div style={{ textAlign: 'right' }}>
+                <div style={{ fontSize: 10, color: 'var(--muted)' }}>CM</div>
+                <div style={{ fontSize: 13, fontFamily: 'var(--font-mono)', fontWeight: 700, color: colorLabel }}>{(data.totalCM * 100).toFixed(1)}%</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    )
+  }
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
@@ -349,215 +376,18 @@ export default async function DashboardPage({
         </div>
       )}
 
-      {/* Ganancia por área — BRUTO */}
-      <div className="card" style={{ padding: '20px 24px' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 16 }}>
-          <TrendingUp size={14} style={{ color: 'var(--teal-400)' }} />
-          <h2 style={{ fontSize: 14, fontWeight: 600, color: 'var(--text)', margin: 0 }}>Ganancia por área — temporada 25/26 <span style={{ color: 'var(--muted)', fontWeight: 400 }}>(TOTAL)</span></h2>
-        </div>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-          {areasSorted.map(row => {
-            const maxGan = Math.max(...areasSorted.map(r => r.ganancia), 1)
-            const pct = Math.max(0, (row.ganancia / maxGan) * 100)
-            const cm = row.venta > 0 ? row.ganancia / row.venta : 0
-            const isB2C = row.area.startsWith('B2C')
-            const displayName = isB2C ? row.area : displayAreaName(row.area)
-            return (
-              <div key={row.area}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
-                  <span style={{ fontSize: 13, color: isB2C ? 'var(--teal-400)' : 'var(--text)', fontWeight: isB2C ? 600 : 400 }}>{displayName}</span>
-                  <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
-                    <span style={{ fontSize: 11, color: 'var(--muted)', fontFamily: 'var(--font-mono)' }}>CM {(cm * 100).toFixed(1)}%</span>
-                    <span style={{ fontSize: 13, fontWeight: 500, color: row.ganancia < 0 ? '#f87171' : 'var(--text)', fontFamily: 'var(--font-mono)' }}>{formatUSD(row.ganancia)}</span>
-                  </div>
-                </div>
-                <div style={{ height: 4, background: 'var(--surface2)', borderRadius: 2 }}>
-                  <div style={{ height: '100%', width: `${pct}%`, background: isB2C ? 'var(--teal-500)' : 'var(--teal-700)', borderRadius: 2 }} />
-                </div>
-              </div>
-            )
-          })}
-          <div style={{ marginTop: 8, paddingTop: 12, borderTop: '2px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--text)' }}>
-              {isAdmin ? 'TOTAL EMPRESA' : 'TOTAL'}
-            </span>
-            <div style={{ display: 'flex', gap: 20, alignItems: 'center' }}>
-              <div style={{ textAlign: 'right' }}>
-                <div style={{ fontSize: 10, color: 'var(--muted)' }}>Venta</div>
-                <div style={{ fontSize: 13, fontFamily: 'var(--font-mono)', color: 'var(--text)' }}>{formatUSD(totalVenta)}</div>
-              </div>
-              <div style={{ textAlign: 'right' }}>
-                <div style={{ fontSize: 10, color: 'var(--muted)' }}>Ganancia</div>
-                <div style={{ fontSize: 13, fontFamily: 'var(--font-mono)', fontWeight: 700, color: '#4ade80' }}>{formatUSD(totalGanancia)}</div>
-              </div>
-              <div style={{ textAlign: 'right' }}>
-                <div style={{ fontSize: 10, color: 'var(--muted)' }}>CM</div>
-                <div style={{ fontSize: 13, fontFamily: 'var(--font-mono)', fontWeight: 700, color: 'var(--teal-400)' }}>{(totalCM * 100).toFixed(1)}%</div>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
+      {/* Ganancia por área — 4 secciones refactorizadas */}
+      <GananciaSection data={bruto2526} title="Ganancia por área — temporada 25/26" label="TOTAL"
+        colorBar="var(--teal-700)" colorBarB2C="var(--teal-500)" colorGan="#4ade80" colorLabel="var(--teal-400)" />
 
-      {/* Ganancia por área — NETO */}
-      <div className="card" style={{ padding: '20px 24px' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
-          <TrendingUp size={14} style={{ color: '#a78bfa' }} />
-          <h2 style={{ fontSize: 14, fontWeight: 600, color: 'var(--text)', margin: 0 }}>Ganancia por área — temporada 25/26 <span style={{ color: 'var(--muted)', fontWeight: 400 }}>(-IVA)</span></h2>
-        </div>
-        <p style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 16, marginTop: 2 }}>
-          Venta y costo descontados de IVA · IVA venta B2C estimado ~4%
-        </p>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-          {areasNetaSorted.map(row => {
-            const maxGan = Math.max(...areasNetaSorted.map(r => r.ganancia), 1)
-            const pct = Math.max(0, (row.ganancia / maxGan) * 100)
-            const cm = row.venta > 0 ? row.ganancia / row.venta : 0
-            const isB2C = row.area.startsWith('B2C')
-            const displayName = isB2C ? row.area : displayAreaName(row.area)
-            return (
-              <div key={row.area}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
-                  <span style={{ fontSize: 13, color: isB2C ? '#a78bfa' : 'var(--text)', fontWeight: isB2C ? 600 : 400 }}>{displayName}</span>
-                  <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
-                    <span style={{ fontSize: 11, color: 'var(--muted)', fontFamily: 'var(--font-mono)' }}>CM {(cm * 100).toFixed(1)}%</span>
-                    <span style={{ fontSize: 13, fontWeight: 500, color: row.ganancia < 0 ? '#f87171' : 'var(--text)', fontFamily: 'var(--font-mono)' }}>{formatUSD(row.ganancia)}</span>
-                  </div>
-                </div>
-                <div style={{ height: 4, background: 'var(--surface2)', borderRadius: 2 }}>
-                  <div style={{ height: '100%', width: `${pct}%`, background: isB2C ? '#7c3aed' : '#5b21b6', borderRadius: 2 }} />
-                </div>
-              </div>
-            )
-          })}
-          <div style={{ marginTop: 8, paddingTop: 12, borderTop: '2px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--text)' }}>
-              {isAdmin ? 'TOTAL EMPRESA' : 'TOTAL'}
-            </span>
-            <div style={{ display: 'flex', gap: 20, alignItems: 'center' }}>
-              <div style={{ textAlign: 'right' }}>
-                <div style={{ fontSize: 10, color: 'var(--muted)' }}>Venta Neta</div>
-                <div style={{ fontSize: 13, fontFamily: 'var(--font-mono)', color: 'var(--text)' }}>{formatUSD(totalVentaNeta)}</div>
-              </div>
-              <div style={{ textAlign: 'right' }}>
-                <div style={{ fontSize: 10, color: 'var(--muted)' }}>Ganancia Neta</div>
-                <div style={{ fontSize: 13, fontFamily: 'var(--font-mono)', fontWeight: 700, color: '#a78bfa' }}>{formatUSD(totalGananciaNeta)}</div>
-              </div>
-              <div style={{ textAlign: 'right' }}>
-                <div style={{ fontSize: 10, color: 'var(--muted)' }}>CM</div>
-                <div style={{ fontSize: 13, fontFamily: 'var(--font-mono)', fontWeight: 700, color: '#a78bfa' }}>{(totalCMNeta * 100).toFixed(1)}%</div>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
+      <GananciaSection data={neto2526} title="Ganancia por área — temporada 25/26" label="-IVA"
+        colorBar="#5b21b6" colorBarB2C="#7c3aed" colorGan="#a78bfa" colorLabel="#a78bfa" />
 
-      {/* Ganancia por área 26/27 — BRUTO */}
-      {areasSorted2627.length > 0 && (
-        <div className="card" style={{ padding: '20px 24px' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 16 }}>
-            <TrendingUp size={14} style={{ color: 'var(--teal-400)' }} />
-            <h2 style={{ fontSize: 14, fontWeight: 600, color: 'var(--text)', margin: 0 }}>
-              Ganancia por área — temporada 26/27 <span style={{ color: 'var(--muted)', fontWeight: 400 }}>(TOTAL)</span>
-            </h2>
-          </div>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-            {areasSorted2627.map(row => {
-              const maxGan = Math.max(...areasSorted2627.map(r => r.ganancia), 1)
-              const pct = Math.max(0, (row.ganancia / maxGan) * 100)
-              const cm = row.venta > 0 ? row.ganancia / row.venta : 0
-              const isB2C = row.area.startsWith('B2C')
-              const displayName = isB2C ? row.area : displayAreaName(row.area)
-              return (
-                <div key={row.area}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
-                    <span style={{ fontSize: 13, color: isB2C ? 'var(--teal-400)' : 'var(--text)', fontWeight: isB2C ? 600 : 400 }}>{displayName}</span>
-                    <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
-                      <span style={{ fontSize: 11, color: 'var(--muted)', fontFamily: 'var(--font-mono)' }}>CM {(cm * 100).toFixed(1)}%</span>
-                      <span style={{ fontSize: 13, fontWeight: 500, color: row.ganancia < 0 ? '#f87171' : 'var(--text)', fontFamily: 'var(--font-mono)' }}>{formatUSD(row.ganancia)}</span>
-                    </div>
-                  </div>
-                  <div style={{ height: 4, background: 'var(--surface2)', borderRadius: 2 }}>
-                    <div style={{ height: '100%', width: `${pct}%`, background: isB2C ? 'var(--teal-500)' : 'var(--teal-700)', borderRadius: 2 }} />
-                  </div>
-                </div>
-              )
-            })}
-            <div style={{ marginTop: 8, paddingTop: 12, borderTop: '2px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--text)' }}>{isAdmin ? 'TOTAL EMPRESA' : 'TOTAL'}</span>
-              <div style={{ display: 'flex', gap: 20, alignItems: 'center' }}>
-                <div style={{ textAlign: 'right' }}>
-                  <div style={{ fontSize: 10, color: 'var(--muted)' }}>Venta</div>
-                  <div style={{ fontSize: 13, fontFamily: 'var(--font-mono)', color: 'var(--text)' }}>{formatUSD(totalVenta2627)}</div>
-                </div>
-                <div style={{ textAlign: 'right' }}>
-                  <div style={{ fontSize: 10, color: 'var(--muted)' }}>Ganancia</div>
-                  <div style={{ fontSize: 13, fontFamily: 'var(--font-mono)', fontWeight: 700, color: '#4ade80' }}>{formatUSD(totalGanancia2627)}</div>
-                </div>
-                <div style={{ textAlign: 'right' }}>
-                  <div style={{ fontSize: 10, color: 'var(--muted)' }}>CM</div>
-                  <div style={{ fontSize: 13, fontFamily: 'var(--font-mono)', fontWeight: 700, color: 'var(--teal-400)' }}>{(totalCM2627 * 100).toFixed(1)}%</div>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
+      <GananciaSection data={bruto2627} title="Ganancia por área — temporada 26/27" label="TOTAL"
+        colorBar="var(--teal-700)" colorBarB2C="var(--teal-500)" colorGan="#4ade80" colorLabel="var(--teal-400)" />
 
-      {/* Ganancia por área 26/27 — NETO */}
-      {areasNetaSorted2627.length > 0 && (
-        <div className="card" style={{ padding: '20px 24px' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
-            <TrendingUp size={14} style={{ color: '#a78bfa' }} />
-            <h2 style={{ fontSize: 14, fontWeight: 600, color: 'var(--text)', margin: 0 }}>
-              Ganancia por área — temporada 26/27 <span style={{ color: 'var(--muted)', fontWeight: 400 }}>(-IVA)</span>
-            </h2>
-          </div>
-          <p style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 16, marginTop: 2 }}>
-            Venta y costo descontados de IVA · IVA venta B2C estimado ~4%
-          </p>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-            {areasNetaSorted2627.map(row => {
-              const maxGan = Math.max(...areasNetaSorted2627.map(r => r.ganancia), 1)
-              const pct = Math.max(0, (row.ganancia / maxGan) * 100)
-              const cm = row.venta > 0 ? row.ganancia / row.venta : 0
-              const isB2C = row.area.startsWith('B2C')
-              const displayName = isB2C ? row.area : displayAreaName(row.area)
-              return (
-                <div key={row.area}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
-                    <span style={{ fontSize: 13, color: isB2C ? '#a78bfa' : 'var(--text)', fontWeight: isB2C ? 600 : 400 }}>{displayName}</span>
-                    <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
-                      <span style={{ fontSize: 11, color: 'var(--muted)', fontFamily: 'var(--font-mono)' }}>CM {(cm * 100).toFixed(1)}%</span>
-                      <span style={{ fontSize: 13, fontWeight: 500, color: row.ganancia < 0 ? '#f87171' : 'var(--text)', fontFamily: 'var(--font-mono)' }}>{formatUSD(row.ganancia)}</span>
-                    </div>
-                  </div>
-                  <div style={{ height: 4, background: 'var(--surface2)', borderRadius: 2 }}>
-                    <div style={{ height: '100%', width: `${pct}%`, background: isB2C ? '#7c3aed' : '#5b21b6', borderRadius: 2 }} />
-                  </div>
-                </div>
-              )
-            })}
-            <div style={{ marginTop: 8, paddingTop: 12, borderTop: '2px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--text)' }}>{isAdmin ? 'TOTAL EMPRESA' : 'TOTAL'}</span>
-              <div style={{ display: 'flex', gap: 20, alignItems: 'center' }}>
-                <div style={{ textAlign: 'right' }}>
-                  <div style={{ fontSize: 10, color: 'var(--muted)' }}>Venta Neta</div>
-                  <div style={{ fontSize: 13, fontFamily: 'var(--font-mono)', color: 'var(--text)' }}>{formatUSD(totalVentaNeta2627)}</div>
-                </div>
-                <div style={{ textAlign: 'right' }}>
-                  <div style={{ fontSize: 10, color: 'var(--muted)' }}>Ganancia Neta</div>
-                  <div style={{ fontSize: 13, fontFamily: 'var(--font-mono)', fontWeight: 700, color: '#a78bfa' }}>{formatUSD(totalGananciaNeta2627)}</div>
-                </div>
-                <div style={{ textAlign: 'right' }}>
-                  <div style={{ fontSize: 10, color: 'var(--muted)' }}>CM</div>
-                  <div style={{ fontSize: 13, fontFamily: 'var(--font-mono)', fontWeight: 700, color: '#a78bfa' }}>{(totalCMNeta2627 * 100).toFixed(1)}%</div>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
+      <GananciaSection data={neto2627} title="Ganancia por área — temporada 26/27" label="-IVA"
+        colorBar="#5b21b6" colorBarB2C="#7c3aed" colorGan="#a78bfa" colorLabel="#a78bfa" />
 
       {/* Areas Panel */}
       {areas2526Stats.length > 0 && (

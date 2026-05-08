@@ -62,8 +62,6 @@ export default async function DashboardPage({
   since7days.setDate(since7days.getDate() - 7)
 
   // ── QUERIES EN PARALELO ────────────────────────────────────────────────
-  // Antes: 8 queries secuenciales (~800ms)
-  // Ahora: todas en paralelo (~150-200ms)
 
   let enCursoQuery = supabase
     .from('team_leader_rows')
@@ -76,60 +74,68 @@ export default async function DashboardPage({
 
   if (p_areas) enCursoQuery = enCursoQuery.in('booking_branch', p_areas)
 
+  // Lanzar todas las queries en paralelo
+  const confirmadosP = supabase
+    .from('v_confirmados_qu_ok')
+    .select('venta, area')
+    .eq('upload_id', uploadId)
+    .eq('rn', 1)
+    .gte('date_of_change', since7days.toISOString())
+
+  const futurosP = supabase
+    .rpc('get_futuros_kpi', {
+      p_upload_id: uploadId,
+      p_today: today,
+      p_fin: FIN_TEMPORADA,
+      p_areas: p_areas,
+    })
+    .single()
+
+  const ganancia2526P = supabase.rpc('get_ganancia_por_area', { p_upload_id: uploadId, p_areas: p_areas })
+  const ganancia2627P = supabase.rpc('get_ganancia_por_area', { p_upload_id: uploadId, p_areas: p_areas, p_temporada: '26/27' })
+  const ganancia2728P = supabase.rpc('get_ganancia_por_area', { p_upload_id: uploadId, p_areas: p_areas, p_temporada: '27/28' })
+
+  const gananciaNeta2526P = supabase.rpc('get_ganancia_neta_por_area', { p_upload_id: uploadId, p_areas: p_areas })
+  const gananciaNeta2627P = supabase.rpc('get_ganancia_neta_por_area', { p_upload_id: uploadId, p_areas: p_areas, p_temporada: '26/27' })
+  const gananciaNeta2728P = supabase.rpc('get_ganancia_neta_por_area', { p_upload_id: uploadId, p_areas: p_areas, p_temporada: '27/28' })
+
+  const stats2526P = supabase.rpc('get_stats_por_area', { p_upload_id: uploadId, p_areas: p_areas, p_temporada: '25/26' })
+  const stats2627P = supabase.rpc('get_stats_por_area', { p_upload_id: uploadId, p_areas: p_areas, p_temporada: '26/27' })
+  const stats2728P = supabase.rpc('get_stats_por_area', { p_upload_id: uploadId, p_areas: p_areas, p_temporada: '27/28' })
+
+  // Esperar todas en paralelo
   const [
-    { data: confirmados },
-    { data: futurosKpiRaw },
-    { data: enCursoRaw },
-    { data: gananciaPorAreaRaw },
-    { data: ganancia2627Raw },
-    { data: gananciaNetaRaw },
-    { data: gananciaNet2627Raw },
-    { data: areaStats2526Raw },
-    { data: areaStats2627Raw },
+    confirmadosRes,
+    futurosRes,
+    enCursoRes,
+    ganancia2526Res,
+    ganancia2627Res,
+    ganancia2728Res,
+    gananciaNeta2526Res,
+    gananciaNeta2627Res,
+    gananciaNeta2728Res,
+    stats2526Res,
+    stats2627Res,
+    stats2728Res,
   ] = await Promise.all([
-    // 1. Confirmados QU→OK últimos 7 días
-    supabase
-      .from('v_confirmados_qu_ok')
-      .select('venta, area')
-      .eq('upload_id', uploadId)
-      .eq('rn', 1)
-      .gte('date_of_change', since7days.toISOString()),
-
-    // 2. Futuros KPI
-    supabase
-      .rpc('get_futuros_kpi', {
-        p_upload_id: uploadId,
-        p_today: today,
-        p_fin: FIN_TEMPORADA,
-        p_areas: p_areas,
-      })
-      .single(),
-
-    // 3. En curso hoy
+    confirmadosP,
+    futurosP,
     enCursoQuery,
-
-    // 4. Ganancia 25/26 BRUTO
-    supabase.rpc('get_ganancia_por_area', { p_upload_id: uploadId, p_areas: p_areas }),
-
-    // 5. Ganancia 26/27 BRUTO
-    supabase.rpc('get_ganancia_por_area', { p_upload_id: uploadId, p_areas: p_areas, p_temporada: '26/27' }),
-
-    // 6. Ganancia 25/26 NETO
-    supabase.rpc('get_ganancia_neta_por_area', { p_upload_id: uploadId, p_areas: p_areas }),
-
-    // 7. Ganancia 26/27 NETO
-    supabase.rpc('get_ganancia_neta_por_area', { p_upload_id: uploadId, p_areas: p_areas, p_temporada: '26/27' }),
-
-    // 8. Stats 25/26
-    supabase.rpc('get_stats_por_area', { p_upload_id: uploadId, p_areas: p_areas, p_temporada: '25/26' }),
-
-    // 9. Stats 26/27
-    supabase.rpc('get_stats_por_area', { p_upload_id: uploadId, p_areas: p_areas, p_temporada: '26/27' }),
+    ganancia2526P,
+    ganancia2627P,
+    ganancia2728P,
+    gananciaNeta2526P,
+    gananciaNeta2627P,
+    gananciaNeta2728P,
+    stats2526P,
+    stats2627P,
+    stats2728P,
   ])
 
   // ── PROCESAR RESULTADOS ────────────────────────────────────────────────
 
   // Confirmados
+  const confirmados = confirmadosRes.data
   const confirmadosFiltrados = p_areas
     ? (confirmados ?? []).filter(r => p_areas.includes(r.area ?? ''))
     : (confirmados ?? [])
@@ -137,13 +143,14 @@ export default async function DashboardPage({
   const ventaConfirmados = confirmadosFiltrados.reduce((s, r) => s + (r.venta ?? 0), 0)
 
   // Futuros
-  const futurosKpi = futurosKpiRaw as { viajes: number; venta: number; ganancia: number } | null
+  const futurosKpi = futurosRes.data as { viajes: number; venta: number; ganancia: number } | null
   const totalFuturos = futurosKpi?.viajes ?? 0
   const ventaFutura = futurosKpi?.venta ?? 0
   const gananciaFutura = futurosKpi?.ganancia ?? 0
   const cmFutura = ventaFutura > 0 ? gananciaFutura / ventaFutura : 0
 
   // En curso hoy
+  const enCursoRaw = enCursoRes.data
   const enCursoMap = new Map<string, { pax: number; area: string }>()
   enCursoRaw?.forEach(r => {
     if (!enCursoMap.has(r.file_code))
@@ -181,10 +188,12 @@ export default async function DashboardPage({
     return { sorted, totalVenta, totalGanancia, totalCM: totalVenta > 0 ? totalGanancia / totalVenta : 0 }
   }
 
-  const bruto2526 = buildGananciaAreas(gananciaPorAreaRaw)
-  const neto2526 = buildGananciaAreas(gananciaNetaRaw)
-  const bruto2627 = buildGananciaAreas(ganancia2627Raw)
-  const neto2627 = buildGananciaAreas(gananciaNet2627Raw)
+  const bruto2526 = buildGananciaAreas(ganancia2526Res.data)
+  const neto2526 = buildGananciaAreas(gananciaNeta2526Res.data)
+  const bruto2627 = buildGananciaAreas(ganancia2627Res.data)
+  const neto2627 = buildGananciaAreas(gananciaNeta2627Res.data)
+  const bruto2728 = buildGananciaAreas(ganancia2728Res.data)
+  const neto2728 = buildGananciaAreas(gananciaNeta2728Res.data)
 
   // AreasPanel stats
   type StatRow = { area: string; venta: number; ganancia: number; viajes: number; pax: number }
@@ -206,8 +215,9 @@ export default async function DashboardPage({
     ].sort((a, b) => b.ganancia - a.ganancia)
     return result
   }
-  const areas2526Stats = buildAreaStats(areaStats2526Raw as StatRow[], '25/26')
-  const areas2627Stats = buildAreaStats(areaStats2627Raw as StatRow[], '26/27')
+  const areas2526Stats = buildAreaStats(stats2526Res.data as StatRow[], '25/26')
+  const areas2627Stats = buildAreaStats(stats2627Res.data as StatRow[], '26/27')
+  const areas2728Stats = buildAreaStats(stats2728Res.data as StatRow[], '27/28')
 
   const uploadDate = format(new Date(lastUpload.created_at), "d 'de' MMMM, HH:mm", { locale: es })
 
@@ -376,22 +386,30 @@ export default async function DashboardPage({
         </div>
       )}
 
-      {/* Ganancia por área — 4 secciones refactorizadas */}
+      {/* Ganancia por área — 25/26 */}
       <GananciaSection data={bruto2526} title="Ganancia por área — temporada 25/26" label="TOTAL"
         colorBar="var(--teal-700)" colorBarB2C="var(--teal-500)" colorGan="#4ade80" colorLabel="var(--teal-400)" />
 
       <GananciaSection data={neto2526} title="Ganancia por área — temporada 25/26" label="-IVA"
         colorBar="#5b21b6" colorBarB2C="#7c3aed" colorGan="#a78bfa" colorLabel="#a78bfa" />
 
+      {/* Ganancia por área — 26/27 */}
       <GananciaSection data={bruto2627} title="Ganancia por área — temporada 26/27" label="TOTAL"
         colorBar="var(--teal-700)" colorBarB2C="var(--teal-500)" colorGan="#4ade80" colorLabel="var(--teal-400)" />
 
       <GananciaSection data={neto2627} title="Ganancia por área — temporada 26/27" label="-IVA"
         colorBar="#5b21b6" colorBarB2C="#7c3aed" colorGan="#a78bfa" colorLabel="#a78bfa" />
 
+      {/* Ganancia por área — 27/28 */}
+      <GananciaSection data={bruto2728} title="Ganancia por área — temporada 27/28" label="TOTAL"
+        colorBar="var(--teal-700)" colorBarB2C="var(--teal-500)" colorGan="#4ade80" colorLabel="var(--teal-400)" />
+
+      <GananciaSection data={neto2728} title="Ganancia por área — temporada 27/28" label="-IVA"
+        colorBar="#5b21b6" colorBarB2C="#7c3aed" colorGan="#a78bfa" colorLabel="#a78bfa" />
+
       {/* Areas Panel */}
-      {areas2526Stats.length > 0 && (
-        <AreasPanel areas2526={areas2526Stats} areas2627={areas2627Stats} />
+      {(areas2526Stats.length > 0 || areas2627Stats.length > 0 || areas2728Stats.length > 0) && (
+        <AreasPanel areas2526={areas2526Stats} areas2627={areas2627Stats} areas2728={areas2728Stats} />
       )}
 
       {/* Quick links */}

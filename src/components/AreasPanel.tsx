@@ -70,35 +70,32 @@ function AreaCard({ row }: { row: AreaStat }) {
   )
 }
 
-export default function AreasPanel({ areas2526, areas2627 }: {
+function TemporadaBlock({ label, areas }: { label: string; areas: AreaStat[] }) {
+  if (areas.length === 0) return null
+  return (
+    <div style={{ marginBottom: 20 }}>
+      <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 8, fontWeight: 500 }}>TEMPORADA {label}</div>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+        {areas.map(row => <AreaCard key={row.area} row={row} />)}
+      </div>
+    </div>
+  )
+}
+
+export default function AreasPanel({ areas2526, areas2627, areas2728 = [] }: {
   areas2526: AreaStat[]
   areas2627: AreaStat[]
+  areas2728?: AreaStat[]
 }) {
-  const hasNext = areas2627.length > 0
-
   return (
     <div className="card" style={{ padding: '20px 24px' }}>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
         <h2 style={{ fontSize: 14, fontWeight: 600, color: 'var(--text)', margin: 0 }}>Resumen por área</h2>
       </div>
 
-      {areas2526.length > 0 && (
-        <div style={{ marginBottom: hasNext ? 20 : 0 }}>
-          {hasNext && <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 8, fontWeight: 500 }}>TEMPORADA 25/26</div>}
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-            {areas2526.map(row => <AreaCard key={row.area} row={row} />)}
-          </div>
-        </div>
-      )}
-
-      {hasNext && (
-        <div>
-          <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 8, fontWeight: 500 }}>TEMPORADA 26/27</div>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-            {areas2627.map(row => <AreaCard key={row.area} row={row} />)}
-          </div>
-        </div>
-      )}
+      <TemporadaBlock label="25/26" areas={areas2526} />
+      <TemporadaBlock label="26/27" areas={areas2627} />
+      <TemporadaBlock label="27/28" areas={areas2728} />
     </div>
   )
 }

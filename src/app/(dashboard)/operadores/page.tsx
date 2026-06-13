@@ -22,7 +22,7 @@ const PERIODOS = [
 export default async function OperadoresPage({
   searchParams,
 }: {
-  searchParams: { temp?: string; area?: string; periodo?: string }
+  searchParams: { temp?: string; area?: string; periodo?: string; sort?: string; dir?: string }
 }) {
   const supabase = createClient()
   const periodo = searchParams.periodo ?? 'todos'
@@ -70,6 +70,17 @@ export default async function OperadoresPage({
   })
   const ranking = (rawRanking ?? []) as ORow[]
 
+  // Orden por columna de datos (click en el encabezado). Default: venta desc.
+  const SORT_KEYS = ['files', 'dias', 'pax', 'venta'] as const
+  type SortKey = typeof SORT_KEYS[number]
+  const sortKey: SortKey = (SORT_KEYS as readonly string[]).includes(searchParams.sort ?? '')
+    ? (searchParams.sort as SortKey) : 'venta'
+  const sortDir: 'asc' | 'desc' = searchParams.dir === 'asc' ? 'asc' : 'desc'
+  ranking.sort((a, b) => {
+    const d = (a[sortKey] ?? 0) - (b[sortKey] ?? 0)
+    return sortDir === 'asc' ? d : -d
+  })
+
   const totalFiles  = ranking.reduce((s, r) => s + r.files, 0)
   const totalDias   = ranking.reduce((s, r) => s + r.dias, 0)
   const totalPax    = ranking.reduce((s, r) => s + r.pax, 0)
@@ -78,8 +89,8 @@ export default async function OperadoresPage({
   const periodoLabel = PERIODOS.find(p => p.value === periodo)?.label ?? 'Todos'
 
   function buildHref(overrides: Record<string, string>) {
-    const p = { temp, area: areaFiltro ?? '', periodo, ...overrides }
-    return `?temp=${encodeURIComponent(p.temp)}&area=${encodeURIComponent(p.area)}&periodo=${p.periodo}`
+    const p = { temp, area: areaFiltro ?? '', periodo, sort: sortKey, dir: sortDir, ...overrides }
+    return `?temp=${encodeURIComponent(p.temp)}&area=${encodeURIComponent(p.area)}&periodo=${p.periodo}&sort=${p.sort}&dir=${p.dir}`
   }
 
   return (
@@ -147,13 +158,23 @@ export default async function OperadoresPage({
           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
             <thead>
               <tr style={{ background: 'var(--surface2)' }}>
-                {['#', 'Operador', 'Área', 'Files', 'Días operados', 'Pax', 'Venta'].map(h => (
-                  <th key={h} style={{
-                    padding: '10px 16px',
-                    textAlign: ['#', 'Operador', 'Área'].includes(h) ? 'left' : 'right',
-                    color: 'var(--muted)', fontWeight: 500, fontSize: 12, whiteSpace: 'nowrap',
-                  }}>{h}</th>
-                ))}
+                {([['#', null], ['Operador', null], ['Área', null], ['Files', 'files'], ['Días operados', 'dias'], ['Pax', 'pax'], ['Venta', 'venta']] as [string, SortKey | null][]).map(([h, key]) => {
+                  const left = ['#', 'Operador', 'Área'].includes(h)
+                  const active = key !== null && sortKey === key
+                  return (
+                    <th key={h} style={{
+                      padding: '10px 16px', textAlign: left ? 'left' : 'right',
+                      color: active ? 'var(--teal-400)' : 'var(--muted)', fontWeight: active ? 700 : 500, fontSize: 12, whiteSpace: 'nowrap',
+                    }}>
+                      {key === null ? h : (
+                        <a href={buildHref({ sort: key, dir: active && sortDir === 'desc' ? 'asc' : 'desc' })}
+                          style={{ color: 'inherit', textDecoration: 'none', cursor: 'pointer' }}>
+                          {h}{active ? (sortDir === 'desc' ? ' ↓' : ' ↑') : ''}
+                        </a>
+                      )}
+                    </th>
+                  )
+                })}
               </tr>
             </thead>
             <tbody>

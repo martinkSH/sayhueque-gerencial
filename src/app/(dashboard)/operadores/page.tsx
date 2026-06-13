@@ -1,12 +1,16 @@
 import { createClient } from '@/lib/supabase/server'
-import { getUserProfile, expandAreas } from '@/lib/user-context'
+import { getUserProfile, expandAreas, B2C_AREAS } from '@/lib/user-context'
 import { Briefcase } from 'lucide-react'
+import { formatUSD } from '@/lib/format'
 
 export const dynamic = 'force-dynamic'
 
-import { formatUSD } from '@/lib/format'
-
-const TEMPORADAS = ['25/26', '24/25', '23/24', '26/27']
+// Áreas fijas para el filtro (antes salían combinaciones concatenadas que mareaban).
+// 'B2C' agrupa Web + Plataformas + Walk In.
+const AREA_OPTIONS = ['Plataformas', 'B2C', 'Aliwen', 'DMC FITS', 'Grupos DMC']
+function areaToBranches(a: string): string[] {
+  return a === 'B2C' ? B2C_AREAS : [a]
+}
 
 const PERIODOS = [
   { value: 'todos',     label: 'Todos' },
@@ -21,8 +25,6 @@ export default async function OperadoresPage({
   searchParams: { temp?: string; area?: string; periodo?: string }
 }) {
   const supabase = createClient()
-  const temp = searchParams.temp ?? '25/26'
-  const areaFiltro = searchParams.area ?? 'todas'
   const periodo = searchParams.periodo ?? 'todos'
   const userProfile = await getUserProfile()
   const isAdmin = userProfile?.role === 'admin'
@@ -36,28 +38,37 @@ export default async function OperadoresPage({
     return <div style={{ textAlign: 'center', marginTop: 80, color: 'var(--muted)' }}>Sin datos. Subí un Excel primero.</div>
   }
 
-  const { data: rawRanking } = await supabase
-    .rpc('get_ranking_operadores', {
-      p_upload_id: lastUpload.id,
-      p_temporada: temp,
-      p_periodo: periodo === 'todos' ? null : periodo,
-    })
+  // Temporadas con operadores (default: 26/27, la temporada vigente)
+  const { data: tempsRaw } = await supabase.rpc('get_temporadas_con_operadores', {
+    p_upload_id: lastUpload.id, p_areas: expandedUserAreas,
+  })
+  const temporadas = ((tempsRaw ?? []) as { temporada: string }[]).map(t => t.temporada)
+  const temp = searchParams.temp && temporadas.includes(searchParams.temp)
+    ? searchParams.temp
+    : temporadas.includes('26/27') ? '26/27' : (temporadas[0] ?? '26/27')
+
+  // Áreas visibles según rol (el comercial solo ve las suyas)
+  const areaOptions = expandedUserAreas
+    ? AREA_OPTIONS.filter(a => a === 'B2C'
+        ? expandedUserAreas.some(b => B2C_AREAS.includes(b))
+        : expandedUserAreas.includes(a))
+    : AREA_OPTIONS
+  const areaFiltro = searchParams.area && areaOptions.includes(searchParams.area)
+    ? searchParams.area
+    : areaOptions.includes('B2C') ? 'B2C' : areaOptions[0]
+
+  // Branches reales del área elegida (intersectadas con las del comercial)
+  let branches = areaFiltro ? areaToBranches(areaFiltro) : []
+  if (expandedUserAreas) branches = branches.filter(b => expandedUserAreas.includes(b))
 
   type ORow = { operador: string; area: string; files: number; dias: number; pax: number; venta: number }
-  const rankingPorRol = expandedUserAreas
-    ? (rawRanking ?? []).filter((r: ORow) => {
-        if (r.area === 'B2C') return expandedUserAreas.some(a => ['Web','Plataformas','Walk In'].includes(a))
-        return expandedUserAreas.includes(r.area)
-      })
-    : (rawRanking ?? [])
-
-  const allRanking = rankingPorRol as ORow[]
-  const areasSet = new Set(allRanking.map(r => r.area))
-  const areaOptions = ['todas', 'B2C', ...Array.from(areasSet).filter(a => a !== 'B2C').sort()]
-
-  const ranking = areaFiltro === 'todas'
-    ? allRanking
-    : allRanking.filter(r => r.area === areaFiltro)
+  const { data: rawRanking } = await supabase.rpc('get_ranking_operadores_area', {
+    p_upload_id: lastUpload.id,
+    p_temporada: temp,
+    p_areas: branches.length > 0 ? branches : null,
+    p_periodo: periodo === 'todos' ? null : periodo,
+  })
+  const ranking = (rawRanking ?? []) as ORow[]
 
   const totalFiles  = ranking.reduce((s, r) => s + r.files, 0)
   const totalDias   = ranking.reduce((s, r) => s + r.dias, 0)
@@ -67,8 +78,8 @@ export default async function OperadoresPage({
   const periodoLabel = PERIODOS.find(p => p.value === periodo)?.label ?? 'Todos'
 
   function buildHref(overrides: Record<string, string>) {
-    const p = { temp, area: areaFiltro, periodo, ...overrides }
-    return `?temp=${p.temp}&area=${encodeURIComponent(p.area)}&periodo=${p.periodo}`
+    const p = { temp, area: areaFiltro ?? '', periodo, ...overrides }
+    return `?temp=${encodeURIComponent(p.temp)}&area=${encodeURIComponent(p.area)}&periodo=${p.periodo}`
   }
 
   return (
@@ -79,11 +90,11 @@ export default async function OperadoresPage({
         <div>
           <h1 style={{ fontSize: 22, fontWeight: 600, color: 'var(--text)', margin: 0 }}>Ranking Operadores</h1>
           <p style={{ color: 'var(--muted)', fontSize: 13, marginTop: 4 }}>
-            Temporada {temp} · {periodoLabel.toLowerCase()} · {lastUpload.filename}
+            Temporada {temp} · {areaFiltro ?? '—'} · {periodoLabel.toLowerCase()} · {lastUpload.filename}
           </p>
         </div>
         <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-          {TEMPORADAS.map(t => (
+          {temporadas.map(t => (
             <a key={t} href={buildHref({ temp: t })} style={{
               padding: '5px 14px', borderRadius: 8, fontSize: 13, textDecoration: 'none',
               background: temp === t ? 'var(--teal-600)' : 'var(--surface2)',
@@ -105,7 +116,7 @@ export default async function OperadoresPage({
               background: areaFiltro === a ? 'var(--surface2)' : 'transparent',
               color: areaFiltro === a ? 'var(--text)' : 'var(--muted)',
               border: `1px solid ${areaFiltro === a ? 'var(--teal-600)' : 'var(--border)'}`,
-            }}>{a === 'todas' ? 'Todas las áreas' : a}</a>
+            }}>{a}</a>
           ))}
         </div>
 
@@ -129,7 +140,7 @@ export default async function OperadoresPage({
         <div style={{ padding: '14px 20px', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', gap: 8 }}>
           <Briefcase size={15} style={{ color: 'var(--teal-400)' }} />
           <span style={{ fontSize: 14, fontWeight: 600, color: 'var(--text)' }}>
-            {ranking.length} operadores · {areaFiltro === 'todas' ? 'todas las áreas' : areaFiltro} · {periodoLabel}
+            {ranking.length} operadores · {areaFiltro ?? '—'} · {periodoLabel}
           </span>
         </div>
         <div style={{ overflowX: 'auto' }}>
@@ -162,8 +173,7 @@ export default async function OperadoresPage({
                   <td style={{ padding: '10px 16px' }}>
                     <span style={{
                       fontSize: 11, padding: '2px 8px', borderRadius: 6, fontWeight: 500,
-                      background: r.area === 'B2C' ? 'rgba(13,148,136,0.15)' : 'rgba(255,255,255,0.06)',
-                      color: r.area === 'B2C' ? 'var(--teal-400)' : 'var(--text-dim)',
+                      background: 'rgba(255,255,255,0.06)', color: 'var(--text-dim)',
                     }}>{r.area}</span>
                   </td>
                   <td style={{ padding: '10px 16px', textAlign: 'right', color: 'var(--text)', fontFamily: 'var(--font-mono)', fontWeight: 500 }}>{r.files.toLocaleString()}</td>

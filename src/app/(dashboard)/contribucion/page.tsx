@@ -1,14 +1,10 @@
 import { createClient } from '@/lib/supabase/server'
 import { fetchAllRows, fetchSalesforceVentaMap } from '@/lib/supabase/fetch-all'
 import { getUserProfile, expandAreas, B2C_AREAS, ESTADOS_CONFIRMADOS } from '@/lib/user-context'
-import { PieChart } from 'lucide-react'
-import { format } from 'date-fns'
+import { categCM } from '@/lib/format'
+import ContribucionClient, { type CMFile } from './ContribucionClient'
 
 export const dynamic = 'force-dynamic'
-
-import { formatUSD, categCM } from '@/lib/format'
-
-const TEMPORADAS = ['25/26','24/25','26/27']
 
 const CATS = ['≥30% Excelente','20-30% OK','10-20% Bajo','<10% Crítico']
 const COLOR_MAP: Record<string,string> = { '≥30% Excelente':'#4ade80','20-30% OK':'#a3e635','10-20% Bajo':'#fb923c','<10% Crítico':'#f87171' }
@@ -22,7 +18,6 @@ export default async function ContribucionPage({
   const userProfile = await getUserProfile()
   const isAdmin = userProfile?.role === 'admin'
   const expandedUserAreas = isAdmin ? null : expandAreas(userProfile?.areas ?? [])
-  const temp = searchParams.temp ?? '25/26'
   const areaFiltro = searchParams.area ?? 'empresa'
 
   const { data: lastUpload } = await supabase
@@ -32,6 +27,15 @@ export default async function ContribucionPage({
   if (!lastUpload) return <div style={{ textAlign: 'center', marginTop: 80, color: 'var(--muted)' }}>Sin datos.</div>
 
   const uploadId = lastUpload.id
+
+  // Temporadas con viajes confirmados (dinámicas). Default: 26/27 (la vigente).
+  const { data: tempsRaw } = await supabase.rpc('get_temporadas_confirmadas', {
+    p_upload_id: uploadId, p_areas: expandedUserAreas,
+  })
+  const TEMPORADAS = ((tempsRaw ?? []) as { temporada: string }[]).map(t => t.temporada)
+  const temp = searchParams.temp && TEMPORADAS.includes(searchParams.temp)
+    ? searchParams.temp
+    : TEMPORADAS.includes('26/27') ? '26/27' : (TEMPORADAS[0] ?? '26/27')
 
   // Áreas disponibles para selector (solo admin)
   const { data: areasRaw } = await supabase
@@ -62,7 +66,7 @@ export default async function ContribucionPage({
     areasReales = [areaFiltro]
   }
 
-  // Paginado: supera el límite de 1000 (y el frágil .limit(10000)) sobre team_leader_rows.
+  // Paginado: supera el límite de 1000 de Supabase sobre team_leader_rows.
   type TlRow = {
     file_code: string; booking_branch: string | null; vendedor: string | null
     venta: number | null; costo: number | null; ganancia: number | null
@@ -80,12 +84,11 @@ export default async function ContribucionPage({
     return q
   })
 
-  // Solo necesitamos venta de Salesforce para B2C
+  // Venta de Salesforce para B2C
   const sfMap = await fetchSalesforceVentaMap(supabase, uploadId)
 
-  type FileData = { file_code: string; area: string; vendedor: string; venta: number; ganancia: number; pax: number; cm: number }
-  const filesMap = new Map<string, FileData>()
-  tlRows?.forEach(r => {
+  const filesMap = new Map<string, CMFile>()
+  tlRows.forEach(r => {
     if (filesMap.has(r.file_code)) return
     let venta: number
     let ganancia: number
@@ -103,20 +106,10 @@ export default async function ContribucionPage({
 
   const allFiles = Array.from(filesMap.values())
   const total = allFiles.length
+
+  // Distribución por categoría de CM (sobre TODOS los files)
   const catCount = new Map<string, number>(CATS.map(c => [c, 0]))
   allFiles.forEach(f => { const c = categCM(f.cm); catCount.set(c.label, (catCount.get(c.label) ?? 0) + 1) })
-
-  // Muestra determinística (~10%): paso fijo sobre la lista ordenada por file_code.
-  // Antes usaba sort(()=>Math.random()-0.5), que cambiaba los KPIs en cada refresh
-  // (server component dinámico) y además producía un shuffle sesgado.
-  const sampleN = Math.min(total, Math.max(10, Math.round(total * 0.10)))
-  const step = sampleN > 0 ? total / sampleN : 1
-  const sample = Array.from({ length: sampleN }, (_, i) => allFiles[Math.floor(i * step)])
-    .filter(Boolean)
-    .sort((a, b) => b.cm - a.cm)
-  const sampleVenta = sample.reduce((s, r) => s + r.venta, 0)
-  const sampleGanancia = sample.reduce((s, r) => s + r.ganancia, 0)
-  const sampleCM = sampleVenta > 0 ? sampleGanancia / sampleVenta : 0
 
   const areaDisplay = !isAdmin
     ? (userProfile?.areas ?? []).join(', ')
@@ -128,12 +121,12 @@ export default async function ContribucionPage({
         <div>
           <h1 style={{ fontSize: 22, fontWeight: 600, color: 'var(--text)', margin: 0 }}>Contribución Marginal</h1>
           <p style={{ color: 'var(--muted)', fontSize: 13, marginTop: 4 }}>
-            {total} files · muestra {sampleN} · {areaDisplay} · {temp}
+            {total} files · {areaDisplay} · {temp}
           </p>
         </div>
-        <div style={{ display: 'flex', gap: 6 }}>
+        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
           {TEMPORADAS.map(t => (
-            <a key={t} href={`?temp=${t}&area=${areaFiltro}`} style={{
+            <a key={t} href={`?temp=${t}&area=${encodeURIComponent(areaFiltro)}`} style={{
               padding: '5px 14px', borderRadius: 8, fontSize: 13, textDecoration: 'none',
               background: temp === t ? 'var(--teal-600)' : 'var(--surface2)',
               color: temp === t ? '#fff' : 'var(--muted)',
@@ -169,48 +162,7 @@ export default async function ContribucionPage({
         })}
       </div>
 
-      <div className="card" style={{ overflow: 'hidden' }}>
-        <div style={{ padding: '14px 20px', borderBottom: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <PieChart size={15} style={{ color: 'var(--teal-400)' }} />
-            <span style={{ fontSize: 14, fontWeight: 600, color: 'var(--text)' }}>Muestra aleatoria — {sampleN} files</span>
-          </div>
-          <div style={{ display: 'flex', gap: 16, fontSize: 12 }}>
-            <span style={{ color: 'var(--muted)' }}>CM: <span style={{ color: 'var(--teal-400)', fontFamily: 'var(--font-mono)', fontWeight: 600 }}>{(sampleCM*100).toFixed(1)}%</span></span>
-            <span style={{ color: 'var(--muted)' }}>Gan: <span style={{ color: '#4ade80', fontFamily: 'var(--font-mono)', fontWeight: 600 }}>{formatUSD(sampleGanancia)}</span></span>
-          </div>
-        </div>
-        <div style={{ overflowX: 'auto' }}>
-          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
-            <thead>
-              <tr style={{ background: 'var(--surface2)' }}>
-                {['File','Área','Vendedor','Pax','Venta','Ganancia','CM','Cat'].map(h => (
-                  <th key={h} style={{ padding: '10px 16px', textAlign: ['File','Área','Vendedor','Cat'].includes(h) ? 'left' : 'right', color: 'var(--muted)', fontWeight: 500, fontSize: 12, whiteSpace: 'nowrap' }}>{h}</th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {sample.map((r, i) => {
-                const cat = categCM(r.cm)
-                return (
-                  <tr key={r.file_code} style={{ borderTop: '1px solid var(--border)', background: i % 2 === 0 ? 'transparent' : 'rgba(255,255,255,0.01)' }}>
-                    <td style={{ padding: '9px 16px', color: 'var(--text)', fontFamily: 'var(--font-mono)', fontSize: 12 }}>{r.file_code}</td>
-                    <td style={{ padding: '9px 16px', color: 'var(--muted)' }}>{r.area}</td>
-                    <td style={{ padding: '9px 16px', color: 'var(--text)' }}>{r.vendedor}</td>
-                    <td style={{ padding: '9px 16px', textAlign: 'right', color: 'var(--muted)', fontFamily: 'var(--font-mono)' }}>{r.pax}</td>
-                    <td style={{ padding: '9px 16px', textAlign: 'right', color: 'var(--text)', fontFamily: 'var(--font-mono)' }}>{formatUSD(r.venta)}</td>
-                    <td style={{ padding: '9px 16px', textAlign: 'right', color: r.ganancia < 0 ? '#f87171' : 'var(--text)', fontFamily: 'var(--font-mono)' }}>{formatUSD(r.ganancia)}</td>
-                    <td style={{ padding: '9px 16px', textAlign: 'right', fontFamily: 'var(--font-mono)', fontWeight: 600, color: cat.color }}>{(r.cm*100).toFixed(1)}%</td>
-                    <td style={{ padding: '9px 16px' }}>
-                      <span style={{ fontSize: 11, padding: '2px 7px', borderRadius: 5, background: `${cat.color}22`, color: cat.color, fontWeight: 500 }}>{cat.short}</span>
-                    </td>
-                  </tr>
-                )
-              })}
-            </tbody>
-          </table>
-        </div>
-      </div>
+      <ContribucionClient files={allFiles} />
     </div>
   )
 }

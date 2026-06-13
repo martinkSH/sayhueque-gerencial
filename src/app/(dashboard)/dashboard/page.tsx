@@ -1,5 +1,5 @@
 import { createClient } from '@/lib/supabase/server'
-import { getUserProfile, expandAreas, B2C_AREAS } from '@/lib/user-context'
+import { getUserProfile, expandAreas, B2C_AREAS, ESTADOS_CONFIRMADOS } from '@/lib/user-context'
 import { displayAreaName } from '@/lib/area-display'
 import { Calendar, CheckCircle2, TrendingUp, Upload, Users } from 'lucide-react'
 import Link from 'next/link'
@@ -13,14 +13,8 @@ import type { AreaStat } from '@/components/AreasPanel'
 
 export const dynamic = 'force-dynamic'
 
-function formatUSD(n: number) {
-  return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 }).format(n)
-}
+import { formatUSD } from '@/lib/format'
 
-const ESTADOS_CONFIRMADOS = [
-  'Final + Day by Day', 'Confirmed', 'Pre Final',
-  'En Operaciones', 'Cerrado', 'Cierre Operativo'
-]
 const FIN_TEMPORADA = '2026-04-30'
 
 export default async function DashboardPage({

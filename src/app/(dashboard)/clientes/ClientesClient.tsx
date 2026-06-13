@@ -5,9 +5,8 @@ import { createClient } from '@/lib/supabase/client'
 import { Users, Calendar } from 'lucide-react'
 import { useRouter } from 'next/navigation'
 
-function formatUSD(n: number) {
-  return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 }).format(n)
-}
+import { formatUSD, cmColor } from '@/lib/format'
+import { B2C_AREAS } from '@/lib/areas'
 
 type CRow = { 
   cliente: string
@@ -48,7 +47,6 @@ export default function ClientesClient({
   const [clientes, setClientes] = useState<CRow[]>([])
   const [loading, setLoading] = useState(false)
 
-  const B2C_AREAS = ['Web', 'Plataformas', 'Walk In']
 
   useEffect(() => {
     loadClientes()
@@ -250,7 +248,7 @@ export default function ClientesClient({
                           <td style={{ padding: '10px 20px', textAlign: 'right', color: 'var(--text)', fontFamily: 'var(--font-mono)', fontWeight: 500 }}>{formatUSD(r.venta)}</td>
                           <td style={{ padding: '10px 20px', textAlign: 'right', color: r.ganancia < 0 ? '#f87171' : '#4ade80', fontFamily: 'var(--font-mono)', fontWeight: 500 }}>{formatUSD(r.ganancia)}</td>
                           <td style={{ padding: '10px 20px', textAlign: 'right', fontFamily: 'var(--font-mono)', fontWeight: 600 }}>
-                            <span style={{ color: cm >= 0.25 ? '#4ade80' : cm >= 0.18 ? '#fbbf24' : '#f87171' }}>
+                            <span style={{ color: cmColor(cm) }}>
                               {(cm * 100).toFixed(1)}%
                             </span>
                           </td>

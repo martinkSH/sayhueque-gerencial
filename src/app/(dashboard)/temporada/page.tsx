@@ -5,9 +5,7 @@ import { es } from 'date-fns/locale'
 
 export const dynamic = 'force-dynamic'
 
-function formatUSD(n: number) {
-  return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 }).format(n)
-}
+import { formatUSD, cmColor } from '@/lib/format'
 function fmt(n: number) { return n.toLocaleString('es-AR', { maximumFractionDigits: 0 }) }
 
 const CORTES = [
@@ -153,7 +151,7 @@ export default async function TemporadaPage() {
           <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12 }}>
             <span style={{ fontSize: 11, color: 'var(--muted)' }}>MG</span>
             <span style={{ fontSize: 12, fontFamily: 'var(--font-mono)', fontWeight: 600,
-              color: cm < 0.15 ? '#f87171' : cm < 0.20 ? '#fb923c' : 'var(--teal-400)'
+              color: cmColor(cm)
             }}>{(cm * 100).toFixed(1)}%</span>
           </div>
         </div>

@@ -4,9 +4,7 @@ import { TrendingUp } from 'lucide-react'
 
 export const dynamic = 'force-dynamic'
 
-function formatUSD(n: number) {
-  return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 }).format(n)
-}
+import { formatUSD, cmColor } from '@/lib/format'
 
 const TEMPORADAS = ['25/26', '24/25', '23/24', '26/27']
 
@@ -169,7 +167,7 @@ export default async function VendedoresPage({
                     <td style={{ padding: '10px 16px', textAlign: 'right', color: 'var(--text)', fontFamily: 'var(--font-mono)' }}>{formatUSD(r.venta)}</td>
                     <td style={{ padding: '10px 16px', textAlign: 'right', color: r.ganancia < 0 ? '#f87171' : '#4ade80', fontFamily: 'var(--font-mono)', fontWeight: 500 }}>{formatUSD(r.ganancia)}</td>
                     <td style={{ padding: '10px 16px', textAlign: 'right', fontFamily: 'var(--font-mono)', fontWeight: 500,
-                      color: cm < 0.15 ? '#f87171' : cm < 0.20 ? '#fb923c' : '#4ade80'
+                      color: cmColor(cm)
                     }}>{(cm * 100).toFixed(1)}%</td>
                   </tr>
                 )

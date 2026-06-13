@@ -6,9 +6,7 @@ import { es } from 'date-fns/locale'
 
 export const dynamic = 'force-dynamic'
 
-function formatUSD(n: number) {
-  return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 }).format(n)
-}
+import { formatUSD } from '@/lib/format'
 function pct(a: number, b: number) {
   if (b === 0) return null
   return ((a - b) / b) * 100

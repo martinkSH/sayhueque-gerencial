@@ -4,9 +4,7 @@ import { Briefcase } from 'lucide-react'
 
 export const dynamic = 'force-dynamic'
 
-function formatUSD(n: number) {
-  return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 }).format(n)
-}
+import { formatUSD } from '@/lib/format'
 
 const TEMPORADAS = ['25/26', '24/25', '23/24', '26/27']
 

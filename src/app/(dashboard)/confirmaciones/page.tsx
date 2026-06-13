@@ -1,17 +1,12 @@
 import { createClient } from '@/lib/supabase/server'
+import { fetchAllRows, fetchSalesforceVentaMap } from '@/lib/supabase/fetch-all'
+import { ESTADOS_CONFIRMADOS } from '@/lib/user-context'
 import { CheckCircle2, TrendingUp } from 'lucide-react'
 import ConfirmacionesClient from './ConfirmacionesClient'
 
 export const dynamic = 'force-dynamic'
 
-function formatUSD(n: number) {
-  return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 }).format(n)
-}
-
-const ESTADOS_CONFIRMADOS = [
-  'Final + Day by Day', 'Confirmed', 'Pre Final',
-  'En Operaciones', 'Cerrado', 'Cierre Operativo'
-]
+import { formatUSD } from '@/lib/format'
 
 export default async function ConfirmacionesPage({
   searchParams,
@@ -68,24 +63,27 @@ export default async function ConfirmacionesPage({
   const totalVenta7d = filas7d.reduce((s, r) => s + r.venta, 0)
 
   // SECCIÓN 2: Acumulado 26/27 en adelante desde team_leader_rows
-  const { data: tlRows } = await supabase
-    .from('team_leader_rows')
-    .select('file_code, temporada, booking_branch, venta, cant_pax, is_b2c')
-    .eq('upload_id', lastUpload.id)
-    .in('estado', ESTADOS_CONFIRMADOS)
+  // Paginado: team_leader_rows tiene >150k filas y Supabase trunca a 1000 sin avisar.
+  type TlRow = {
+    file_code: string; temporada: string | null; booking_branch: string | null
+    venta: number | null; cant_pax: number | null; is_b2c: boolean
+  }
+  const tlRows = await fetchAllRows<TlRow>((from, to) =>
+    supabase
+      .from('team_leader_rows')
+      .select('file_code, temporada, booking_branch, venta, cant_pax, is_b2c')
+      .eq('upload_id', lastUpload.id)
+      .in('estado', ESTADOS_CONFIRMADOS)
+      .order('file_code')
+      .range(from, to)
+  )
 
-  const { data: sfRows } = await supabase
-    .from('salesforce_rows')
-    .select('file_code, venta')
-    .eq('upload_id', lastUpload.id)
-
-  const sfMap = new Map<string, number>()
-  sfRows?.forEach(r => sfMap.set(r.file_code.toUpperCase(), r.venta ?? 0))
+  const sfMap = await fetchSalesforceVentaMap(supabase, lastUpload.id)
 
   type AreaAcum = { viajes: Set<string>; venta: number; pax: number }
   const acumMap = new Map<string, AreaAcum>()
 
-  tlRows?.forEach(r => {
+  tlRows.forEach(r => {
     const temp = r.temporada ?? ''
     const startYear = parseInt(temp.slice(0, 2))
     if (isNaN(startYear) || startYear < 26) return

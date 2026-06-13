@@ -1,23 +1,15 @@
 import { createClient } from '@/lib/supabase/server'
-import { getUserProfile, expandAreas, B2C_AREAS } from '@/lib/user-context'
+import { fetchAllRows, fetchSalesforceVentaMap } from '@/lib/supabase/fetch-all'
+import { getUserProfile, expandAreas, B2C_AREAS, ESTADOS_CONFIRMADOS } from '@/lib/user-context'
 import { PieChart } from 'lucide-react'
 import { format } from 'date-fns'
 
 export const dynamic = 'force-dynamic'
 
-function formatUSD(n: number) {
-  return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 }).format(n)
-}
+import { formatUSD, categCM } from '@/lib/format'
 
-const ESTADOS_CONFIRMADOS = ['Final + Day by Day','Confirmed','Pre Final','En Operaciones','Cerrado','Cierre Operativo']
 const TEMPORADAS = ['25/26','24/25','26/27']
 
-function categCM(cm: number): { label: string; short: string; color: string } {
-  if (cm >= 0.30) return { label: '≥30% Excelente', short: '≥30%',  color: '#4ade80' }
-  if (cm >= 0.20) return { label: '20-30% OK',       short: '20-30%', color: '#a3e635' }
-  if (cm >= 0.10) return { label: '10-20% Bajo',     short: '10-20%', color: '#fb923c' }
-  return              { label: '<10% Crítico',        short: '<10%',   color: '#f87171' }
-}
 const CATS = ['≥30% Excelente','20-30% OK','10-20% Bajo','<10% Crítico']
 const COLOR_MAP: Record<string,string> = { '≥30% Excelente':'#4ade80','20-30% OK':'#a3e635','10-20% Bajo':'#fb923c','<10% Crítico':'#f87171' }
 
@@ -70,19 +62,26 @@ export default async function ContribucionPage({
     areasReales = [areaFiltro]
   }
 
-  let query = supabase
-    .from('team_leader_rows')
-    .select('file_code, booking_branch, vendedor, venta, costo, ganancia, cant_pax, is_b2c')
-    .eq('upload_id', uploadId).eq('temporada', temp)
-    .in('estado', ESTADOS_CONFIRMADOS).limit(10000)
-  if (areasReales) query = query.in('booking_branch', areasReales)
-  const { data: tlRows } = await query
+  // Paginado: supera el límite de 1000 (y el frágil .limit(10000)) sobre team_leader_rows.
+  type TlRow = {
+    file_code: string; booking_branch: string | null; vendedor: string | null
+    venta: number | null; costo: number | null; ganancia: number | null
+    cant_pax: number | null; is_b2c: boolean
+  }
+  const tlRows = await fetchAllRows<TlRow>((from, to) => {
+    let q = supabase
+      .from('team_leader_rows')
+      .select('file_code, booking_branch, vendedor, venta, costo, ganancia, cant_pax, is_b2c')
+      .eq('upload_id', uploadId).eq('temporada', temp)
+      .in('estado', ESTADOS_CONFIRMADOS)
+      .order('file_code')
+      .range(from, to)
+    if (areasReales) q = q.in('booking_branch', areasReales)
+    return q
+  })
 
   // Solo necesitamos venta de Salesforce para B2C
-  const { data: sfRows } = await supabase
-    .from('salesforce_rows').select('file_code, venta').eq('upload_id', uploadId)
-  const sfMap = new Map<string, number>()
-  sfRows?.forEach(r => sfMap.set(r.file_code.toUpperCase(), r.venta ?? 0))
+  const sfMap = await fetchSalesforceVentaMap(supabase, uploadId)
 
   type FileData = { file_code: string; area: string; vendedor: string; venta: number; ganancia: number; pax: number; cm: number }
   const filesMap = new Map<string, FileData>()
@@ -107,8 +106,14 @@ export default async function ContribucionPage({
   const catCount = new Map<string, number>(CATS.map(c => [c, 0]))
   allFiles.forEach(f => { const c = categCM(f.cm); catCount.set(c.label, (catCount.get(c.label) ?? 0) + 1) })
 
-  const sampleN = Math.max(10, Math.round(total * 0.10))
-  const sample = [...allFiles].sort(() => Math.random() - 0.5).slice(0, sampleN).sort((a, b) => b.cm - a.cm)
+  // Muestra determinística (~10%): paso fijo sobre la lista ordenada por file_code.
+  // Antes usaba sort(()=>Math.random()-0.5), que cambiaba los KPIs en cada refresh
+  // (server component dinámico) y además producía un shuffle sesgado.
+  const sampleN = Math.min(total, Math.max(10, Math.round(total * 0.10)))
+  const step = sampleN > 0 ? total / sampleN : 1
+  const sample = Array.from({ length: sampleN }, (_, i) => allFiles[Math.floor(i * step)])
+    .filter(Boolean)
+    .sort((a, b) => b.cm - a.cm)
   const sampleVenta = sample.reduce((s, r) => s + r.venta, 0)
   const sampleGanancia = sample.reduce((s, r) => s + r.ganancia, 0)
   const sampleCM = sampleVenta > 0 ? sampleGanancia / sampleVenta : 0

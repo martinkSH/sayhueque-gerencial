@@ -4,9 +4,7 @@ import { useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { X, FileText } from 'lucide-react'
 
-function formatUSD(n: number) {
-  return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 }).format(n)
-}
+import { formatUSD } from '@/lib/format'
 
 type FilaConfirmado = {
   area: string

@@ -3,9 +3,9 @@
 import { useState } from 'react'
 import { Settings, Plus, Trash2, Edit2, Check, X, Target, Calendar, Users } from 'lucide-react'
 import Link from 'next/link'
+import { ALL_AREAS as AREAS_CM } from '@/lib/areas'
 
 const AREAS_DISPONIBLES = ['B2C', 'Aliwen', 'DMC FITS', 'Grupos DMC', 'Booknow']
-const AREAS_CM = ['Web', 'Plataformas', 'Walk In', 'Aliwen', 'DMC FITS', 'Grupos DMC', 'Booknow']
 
 type UserRow = {
   id: string

@@ -1,5 +1,6 @@
 import { createClient } from '@/lib/supabase/server'
 import { getUserProfile, expandAreas } from '@/lib/user-context'
+import { B2C_AREAS } from '@/lib/areas'
 import ClientesClient from './ClientesClient'
 import SyncQuotesButton from '@/components/SyncQuotesButton'
 
@@ -51,7 +52,6 @@ export default async function ClientesPage({
     ? Array.from(areasSet).filter(a => expandedUserAreas.includes(a))
     : Array.from(areasSet)
 
-  const B2C_AREAS = ['Web', 'Plataformas', 'Walk In']
   const hasBc2 = availableRaw.some(a => B2C_AREAS.includes(a))
   const nonB2C = availableRaw.filter(a => !B2C_AREAS.includes(a)).sort()
   const areaOptions = [...(hasBc2 ? ['B2C'] : []), ...nonB2C]

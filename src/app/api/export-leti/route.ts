@@ -1,5 +1,6 @@
 import { createClient } from '@/lib/supabase/server'
 import { getUserProfile } from '@/lib/user-context'
+import { ALL_AREAS as AREAS_ORDER } from '@/lib/areas'
 import { NextResponse } from 'next/server'
 import ExcelJS from 'exceljs'
 
@@ -20,7 +21,6 @@ type LetiRow = {
 }
 
 const MESES = ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic']
-const AREAS_ORDER = ['Web','Plataformas','Walk In','Aliwen','DMC FITS','Grupos DMC','Booknow']
 
 function mesLabel(d: string) {
   const dt = new Date(d)

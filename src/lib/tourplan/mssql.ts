@@ -1,76 +1,7 @@
 export const runtime = 'nodejs'
-/* eslint-disable @typescript-eslint/no-require-imports */
-const sql = require('mssql')
-
-const config = {
-  server:   'LA-SAYHUE.data.tourplan.net',
-  port:     50409,
-  database: 'LA-SAYHUE',
-  user:     'excelLA-SAYHUE',
-  password: 'o6rmFv7$RJnp14NzqI18',
-  options: {
-    encrypt:                true,
-    trustServerCertificate: true,
-    connectTimeout:         30000,
-    requestTimeout:         120000,
-  },
-}
-
-// Mapeo BookingStatus code → nombre legible (igual que el parser del Excel)
-const ESTADO_MAP: Record<string, string> = {
-  'FF': 'Final + Day by Day',
-  'FI': 'Final',
-  'FN': 'Final',
-  'OK': 'Confirmed',
-  'C7': 'Confirmed',
-  'CD': 'Confirmed',
-  'CT': 'Confirmed',
-  'PF': 'Pre Final',
-  'OP': 'En Operaciones',
-  'CL': 'Cerrado',
-  'CO': 'Cierre Operativo',
-  'QU': 'Quote',
-  'RE': 'Reservado',
-  'XC': 'Cancelado',
-  'XX': 'Cancelado',
-}
-
-// Mapeo BranchCode → booking_branch (igual que en Supabase)
-const BRANCH_MAP: Record<string, string> = {
-  'WE': 'Web',
-  'WI': 'Walk In',
-  'PL': 'Plataformas',
-  'AL': 'Aliwen',
-  'DM': 'DMC FITS',
-  'GR': 'Grupos DMC',
-  'BN': 'Booknow',
-}
-
-function toISO(v: unknown): string | null {
-  if (!v) return null
-  if (v instanceof Date) {
-    if (v.getFullYear() <= 1900) return null
-    return v.toISOString().split('T')[0]
-  }
-  return String(v).slice(0, 10) || null
-}
-
-function getTemporada(fechaIn: string | null): string | null {
-  if (!fechaIn) return null
-  const d = new Date(fechaIn)
-  const m = d.getMonth() + 1 // 1-12
-  const y = d.getFullYear()
-  const desde = m >= 5 ? y : y - 1
-  return `${String(desde).slice(2)}/${String(desde + 1).slice(2)}`
-}
-
-function seasonMonthIdx(fechaIn: string | null): number | null {
-  if (!fechaIn) return null
-  const d = new Date(fechaIn)
-  const m = d.getMonth() + 1
-  // May=0, Jun=1, ..., Dec=7, Jan=8, Feb=9, Mar=10, Apr=11
-  return m >= 5 ? m - 5 : m + 7
-}
+import { toISO, getTemporada, seasonMonthIdx } from '@/lib/season'
+import { tpConnect, sql } from './db'
+import { ESTADO_MAP, BRANCH_MAP } from './constants'
 
 // ← NUEVO: Convertir YYYY-MM-DD a YYYYMMDD para TourPlan
 function toTPDate(dateStr: string): string {
@@ -159,10 +90,14 @@ export async function fetchTourplanData(): Promise<{
     const fechaDesdeTP = toTPDate(dates.fecha_desde)
     const fechaHastaTP = toTPDate(dates.fecha_hasta)
     
-    pool = await sql.connect(config)
+    pool = await tpConnect()
 
     // ── Team Leader ───────────────────────────────────────────────────────
-    const tlResult = await pool.request().query(`
+    // Fechas como parámetros bindeados (evita SQL injection vía config_sync_tourplan).
+    const tlResult = await pool.request()
+      .input('desde', sql.VarChar, fechaDesdeTP)
+      .input('hasta', sql.VarChar, fechaHastaTP)
+      .query(`
       SELECT
         DATEDIFF(DAY, BookingTravelDate, LastServiceDate) AS Cant_Dias,
         BookingReference, BookingStatus, BookingConsultantName,
@@ -175,8 +110,8 @@ export async function fetchTourplanData(): Promise<{
         BookingMarginAmount
       FROM vw_BookingHeaderReportData
       WHERE BookingBranchCode IN ('WE','WI','PL','AL','DM','GR','BN')
-        AND BookingTravelDate >= '${fechaDesdeTP}'
-        AND BookingTravelDate <= '${fechaHastaTP}'
+        AND BookingTravelDate >= @desde
+        AND BookingTravelDate <= @hasta
         AND BookingStatus IN ('C7','CD','CT','FI','FN','IN','OK','OP','PF','XC')
         AND BookingDepartmentName NOT IN ('Test','Sites','Personal Trips','FAM Tours')
         AND BookingBranchName NOT IN ('Test')
@@ -218,7 +153,9 @@ export async function fetchTourplanData(): Promise<{
     })
 
     // ── Bookings Audit ────────────────────────────────────────────────────
-    const auditResult = await pool.request().query(`
+    const auditResult = await pool.request()
+      .input('desde', sql.VarChar, fechaDesdeTP)
+      .query(`
       SELECT
         x.FULL_REFERENCE, x.Analysis1,
         x.PrevBookingStatus AS PreviousStatus,
@@ -241,7 +178,7 @@ export async function fetchTourplanData(): Promise<{
       ) x
       WHERE x.PrevBookingStatus IS NOT NULL
         AND x.PrevBookingStatus <> x.BOOKINGSTATUS
-        AND x.TRAVELDATE >= '${fechaDesdeTP}'
+        AND x.TRAVELDATE >= @desde
       ORDER BY x.FULL_REFERENCE, x.DateOfChange
     `)
 

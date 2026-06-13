@@ -1,4 +1,9 @@
 import { createClient } from '@/lib/supabase/server'
+import { B2C_AREAS } from '@/lib/areas'
+
+// Re-export para retrocompatibilidad: el resto del código importa estas constantes
+// desde '@/lib/user-context'. La fuente real (client-safe) es '@/lib/areas'.
+export { ALL_AREAS, B2C_AREAS, ESTADOS_CONFIRMADOS } from '@/lib/areas'
 
 export type UserProfile = {
   id: string
@@ -31,9 +36,6 @@ export async function getUserProfile(): Promise<UserProfile | null> {
 // Devuelve las áreas reales de Supabase para un filtro dado
 // Si es admin y pide 'todas' → null (sin filtro)
 // Si es comercial → siempre sus áreas
-export const ALL_AREAS = ['Web', 'Plataformas', 'Walk In', 'Aliwen', 'DMC FITS', 'Grupos DMC', 'Booknow']
-export const B2C_AREAS = ['Web', 'Plataformas', 'Walk In']
-
 export function resolveAreas(
   role: string,
   userAreas: string[],

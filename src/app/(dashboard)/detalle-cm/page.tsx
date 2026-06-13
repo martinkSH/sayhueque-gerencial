@@ -1,10 +1,9 @@
 import { createClient } from '@/lib/supabase/server'
-import { getUserProfile, expandAreas } from '@/lib/user-context'
+import { getUserProfile, expandAreas, ESTADOS_CONFIRMADOS as ESTADOS } from '@/lib/user-context'
 import DetalleCMClient from './DetalleCMClient'
 
 export const dynamic = 'force-dynamic'
 
-const ESTADOS = ['Final + Day by Day','Final','Confirmed','Pre Final','En Operaciones','Cerrado','Cierre Operativo']
 const PAGE_SIZE = 1000
 
 export default async function DetalleCMPage({

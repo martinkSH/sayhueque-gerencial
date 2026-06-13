@@ -4,9 +4,8 @@ import { useState, useMemo, useCallback, useEffect } from 'react'
 import { Search, ArrowUpDown, ArrowUp, ArrowDown, Target, CheckCircle, GripVertical, RotateCcw } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 
-function formatUSD(n: number) {
-  return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 }).format(n)
-}
+import { formatUSD } from '@/lib/format'
+
 function fmtDate(s: string) {
   if (!s) return '—'
   return s.slice(0, 10).split('-').reverse().join('/')

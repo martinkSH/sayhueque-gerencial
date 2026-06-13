@@ -27,9 +27,7 @@ type DrillFilter = { tipo: string; valor: string }
 
 const MESES_ES = ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic']
 
-function formatUSD(n: number) {
-  return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 }).format(n)
-}
+import { formatUSD, cmColor } from '@/lib/format'
 function mesLabel(d: string | null) {
   if (!d) return 'Sin fecha'
   const dt = new Date(d)
@@ -57,7 +55,6 @@ function FilesModal({ titulo, rows, onClose }: {
   const totalCosto = rows.reduce((s, r) => s + r.costo, 0)
   const totalGan   = rows.reduce((s, r) => s + r.ganancia, 0)
   const totalCM    = totalVenta > 0 ? totalGan / totalVenta : 0
-  const cmColor = (cm: number) => cm >= 0.25 ? '#4ade80' : cm >= 0.18 ? '#fb923c' : '#f87171'
 
   return (
     <div style={{
@@ -175,7 +172,6 @@ export default function AreaDetalleClient({
   const [tab, setTab] = useState<Tab>('resumen')
   const [drill, setDrill] = useState<DrillFilter | null>(null)
 
-  const cmColor = (cm: number) => cm >= 0.25 ? '#4ade80' : cm >= 0.18 ? '#fb923c' : '#f87171'
 
   // Files para el modal según el filtro activo
   const drillRows = useMemo(() => {

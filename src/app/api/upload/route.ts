@@ -4,28 +4,17 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server'
-import { createServiceClient } from '@/lib/supabase/server'
 import { parseExcel } from '@/lib/parser'
+import { batchInsert } from '@/lib/supabase/batch'
+import { requireUploader } from '@/lib/auth'
 
 export const maxDuration = 60
 
-const CHUNK_SIZE = 500
-
 export async function POST(req: NextRequest) {
-  const supabase = createServiceClient()
-
-  // 1. Auth
-  const authHeader = req.headers.get('authorization')
-  if (!authHeader) return NextResponse.json({ error: 'No autorizado' }, { status: 401 })
-
-  const token = authHeader.replace('Bearer ', '')
-  const { data: { user }, error: authError } = await supabase.auth.getUser(token)
-  if (authError || !user) return NextResponse.json({ error: 'Token inválido' }, { status: 401 })
-
-  const { data: profile } = await supabase.from('profiles').select('role').eq('id', user.id).single()
-  if (!profile || !['admin', 'manager'].includes(profile.role)) {
-    return NextResponse.json({ error: 'Sin permisos para subir archivos' }, { status: 403 })
-  }
+  // 1. Auth (Bearer token + rol admin/manager)
+  const auth = await requireUploader(req)
+  if (!auth.ok) return auth.res
+  const { supabase, userId } = auth
 
   // 2. Leer storagePath del body JSON
   let storagePath: string
@@ -55,7 +44,7 @@ export async function POST(req: NextRequest) {
 
   const { data: uploadRecord, error: uploadErr } = await supabase
     .from('uploads')
-    .insert({ uploaded_by: user.id, filename, semana, periodo, status: 'processing' })
+    .insert({ uploaded_by: userId, filename, semana, periodo, status: 'processing' })
     .select('id')
     .single()
 
@@ -70,10 +59,8 @@ export async function POST(req: NextRequest) {
     const buffer = await fileData.arrayBuffer()
     const parsed = await parseExcel(buffer)
 
-    // 6. Borrar uploads anteriores (cascade borra datos)
-    await supabase.from('uploads').delete().neq('id', uploadId)
-
-    // 7. Insertar en batches
+    // 6. Insertar en batches (ANTES de borrar los uploads viejos, para no perder
+    //    datos si falla algún insert — el catch deja los datos previos intactos).
     const tlRows = parsed.teamLeader.map(row => ({ ...row, upload_id: uploadId }))
     const sfRows = parsed.salesforce.map(row => ({ ...row, upload_id: uploadId }))
     const auditRows = parsed.audit.map(row => ({ ...row, upload_id: uploadId }))
@@ -87,6 +74,9 @@ export async function POST(req: NextRequest) {
     await batchInsert(supabase, 'temp_2425_ganancia', g2425)
     await batchInsert(supabase, 'temp_2425_venta', v2425)
     await batchInsert(supabase, 'temp_2425_cantidad', c2425)
+
+    // 7. Recién ahora borrar los uploads anteriores (cascade borra sus datos).
+    await supabase.from('uploads').delete().neq('id', uploadId)
 
     const rowCount = {
       team_leader: tlRows.length,
@@ -105,18 +95,6 @@ export async function POST(req: NextRequest) {
     await supabase.from('uploads').update({ status: 'error', error_msg: message }).eq('id', uploadId)
     console.error('[upload] Error:', message)
     return NextResponse.json({ error: message }, { status: 500 })
-  }
-}
-
-async function batchInsert(
-  supabase: ReturnType<typeof createServiceClient>,
-  table: string,
-  rows: Record<string, unknown>[]
-) {
-  if (rows.length === 0) return
-  for (let i = 0; i < rows.length; i += CHUNK_SIZE) {
-    const { error } = await supabase.from(table).insert(rows.slice(i, i + CHUNK_SIZE))
-    if (error) throw new Error(`Error insertando en ${table}: ${error.message}`)
   }
 }
 

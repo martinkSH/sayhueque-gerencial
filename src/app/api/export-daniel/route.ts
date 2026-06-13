@@ -1,5 +1,6 @@
 import { createClient } from '@/lib/supabase/server'
 import { getUserProfile } from '@/lib/user-context'
+import { ALL_AREAS as AREAS_ORDER, B2C_AREAS } from '@/lib/areas'
 import { NextResponse } from 'next/server'
 import ExcelJS from 'exceljs'
 
@@ -17,8 +18,6 @@ type LetiRow = {
 type AreaRow = { area: string; venta: number; ganancia: number }
 
 const MESES = ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic']
-const AREAS_ORDER = ['Web','Plataformas','Walk In','Aliwen','DMC FITS','Grupos DMC','Booknow']
-const B2C_AREAS   = ['Web','Plataformas','Walk In']
 const TEMPORADAS  = ['25/26','26/27','27/28']
 
 function mesLabel(d: string) {

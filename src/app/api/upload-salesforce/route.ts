@@ -1,23 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { createServiceClient } from '@/lib/supabase/server'
 import * as XLSX from 'xlsx'
+import { batchInsert, getLatestUpload } from '@/lib/supabase/batch'
+import { requireUploader } from '@/lib/auth'
 
 export const maxDuration = 60
 
 export async function POST(req: NextRequest) {
-  const supabase = createServiceClient()
-
-  const authHeader = req.headers.get('authorization')
-  if (!authHeader) return NextResponse.json({ error: 'No autorizado' }, { status: 401 })
-
-  const token = authHeader.replace('Bearer ', '')
-  const { data: { user }, error: authError } = await supabase.auth.getUser(token)
-  if (authError || !user) return NextResponse.json({ error: 'Token inválido' }, { status: 401 })
-
-  const { data: profile } = await supabase.from('profiles').select('role').eq('id', user.id).single()
-  if (!profile || !['admin', 'manager'].includes(profile.role)) {
-    return NextResponse.json({ error: 'Sin permisos' }, { status: 403 })
-  }
+  const auth = await requireUploader(req)
+  if (!auth.ok) return auth.res
+  const { supabase } = auth
 
   let storagePath: string, filename: string
   try {
@@ -61,10 +52,7 @@ export async function POST(req: NextRequest) {
     if (sfRows.length === 0) throw new Error('No se encontraron filas de Salesforce')
 
     // Obtener el upload_id activo más reciente (del sync de TourPlan)
-    const { data: lastUpload } = await supabase
-      .from('uploads').select('id').eq('status', 'ok')
-      .order('created_at', { ascending: false }).limit(1).single()
-
+    const lastUpload = await getLatestUpload(supabase)
     if (!lastUpload) throw new Error('No hay upload activo. Hacé un sync de TourPlan primero.')
 
     const uploadId = lastUpload.id
@@ -72,12 +60,7 @@ export async function POST(req: NextRequest) {
     // Borrar SF rows del upload activo y reinsertar
     await supabase.from('salesforce_rows').delete().eq('upload_id', uploadId)
 
-    const CHUNK = 500
-    for (let i = 0; i < sfRows.length; i += CHUNK) {
-      const chunk = sfRows.slice(i, i + CHUNK).map(r => ({ ...r, upload_id: uploadId }))
-      const { error } = await supabase.from('salesforce_rows').insert(chunk)
-      if (error) throw new Error(`Error insertando SF: ${error.message}`)
-    }
+    await batchInsert(supabase, 'salesforce_rows', sfRows.map(r => ({ ...r, upload_id: uploadId })))
 
     return NextResponse.json({ success: true, rows: sfRows.length, upload_id: uploadId })
 

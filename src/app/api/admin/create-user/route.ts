@@ -1,25 +1,23 @@
-import { createClient } from '@/lib/supabase/server'
-import { createClient as createAdminClient } from '@supabase/supabase-js'
 import { NextRequest, NextResponse } from 'next/server'
+import { requireAdmin } from '@/lib/auth'
 
 export async function POST(req: NextRequest) {
-  // Verificar que el que llama es admin
-  const supabase = createClient()
-  const { data: { user } } = await supabase.auth.getUser()
-  if (!user) return NextResponse.json({ error: 'No autorizado' }, { status: 401 })
+  const auth = await requireAdmin()
+  if (!auth.ok) return auth.res
+  const { admin } = auth
 
-  const { data: profile } = await supabase.from('profiles').select('role').eq('id', user.id).single()
-  if (profile?.role !== 'admin') return NextResponse.json({ error: 'No autorizado' }, { status: 403 })
+  let body: { email?: string; password?: string; full_name?: string; role?: string; areas?: string[] }
+  try {
+    body = await req.json()
+  } catch {
+    return NextResponse.json({ error: 'Body inválido' }, { status: 400 })
+  }
+  const { email, password, full_name, role, areas } = body
+  if (!email || !password || !role) {
+    return NextResponse.json({ error: 'Faltan campos requeridos (email, password, role)' }, { status: 400 })
+  }
 
-  const { email, password, full_name, role, areas } = await req.json()
-
-  // Crear usuario con service role
-  const adminClient = createAdminClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.SUPABASE_SERVICE_ROLE_KEY!
-  )
-
-  const { data: newUser, error } = await adminClient.auth.admin.createUser({
+  const { data: newUser, error } = await admin.auth.admin.createUser({
     email,
     password,
     email_confirm: true,
@@ -29,7 +27,7 @@ export async function POST(req: NextRequest) {
   if (error) return NextResponse.json({ error: error.message }, { status: 400 })
 
   // Crear perfil
-  const { error: profileError } = await adminClient.from('profiles').upsert({
+  const { error: profileError } = await admin.from('profiles').upsert({
     id: newUser.user.id,
     full_name,
     role,

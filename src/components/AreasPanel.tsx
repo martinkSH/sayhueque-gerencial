@@ -12,9 +12,7 @@ export interface AreaStat {
   temporada: string
 }
 
-function formatUSD(n: number) {
-  return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 }).format(n)
-}
+import { formatUSD, cmColor } from '@/lib/format'
 
 const AREA_COLORS: Record<string, { dot: string; accent: string }> = {
   'B2C (Web + Plataformas + Walk In)': { dot: '#14b8a6', accent: 'rgba(20,184,166,0.08)' },
@@ -61,7 +59,7 @@ function AreaCard({ row }: { row: AreaStat }) {
         <div style={{ textAlign: 'right', minWidth: 52 }}>
           <div style={{ fontSize: 10, color: 'var(--muted)' }}>CM</div>
           <div style={{ fontSize: 13, fontFamily: 'var(--font-mono)', fontWeight: 600,
-            color: cm >= 0.25 ? '#4ade80' : cm >= 0.18 ? '#fb923c' : '#f87171',
+            color: cmColor(cm),
           }}>{(cm * 100).toFixed(1)}%</div>
         </div>
       </div>

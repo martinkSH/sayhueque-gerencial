@@ -4,16 +4,7 @@ import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { getUserProfile } from '@/lib/user-context'
 import { fetchTourplanData } from '@/lib/tourplan/mssql'
-
-const BATCH = 500
-
-async function batchUpsert(supabase: any, table: string, rows: any[], conflictCol: string) {
-  for (let i = 0; i < rows.length; i += BATCH) {
-    const chunk = rows.slice(i, i + BATCH)
-    const { error } = await supabase.from(table).upsert(chunk, { onConflict: conflictCol })
-    if (error) throw new Error(`${table} upsert error: ${error.message}`)
-  }
-}
+import { batchUpsert, batchInsert } from '@/lib/supabase/batch'
 
 export async function POST(req: Request) {
   // Permitir llamada con secret header para cron job
@@ -70,16 +61,13 @@ export async function POST(req: Request) {
         .from('salesforce_rows').select('*').eq('upload_id', prevUpload.id)
       if (prevSF && prevSF.length > 0) {
         const newSF = prevSF.map(({ id: _id, upload_id: _uid, ...rest }: any) => ({ ...rest, upload_id: uploadId }))
-        const CHUNK = 500
-        for (let i = 0; i < newSF.length; i += CHUNK) {
-          await supabase.from('salesforce_rows').insert(newSF.slice(i, i + CHUNK))
-        }
+        await batchInsert(supabase, 'salesforce_rows', newSF)
       }
     }
 
     // Insertar TL rows (ya con departamentos virtuales aplicados)
     const tlRows = teamLeader.map(r => ({ ...r, upload_id: uploadId }))
-    await batchUpsert(supabase, 'team_leader_rows', tlRows, 'upload_id,file_code')
+    await batchUpsert(supabase, 'team_leader_rows', tlRows, { onConflict: 'upload_id,file_code' })
 
     // Insertar audit rows
     if (audit.length > 0) {
@@ -90,7 +78,7 @@ export async function POST(req: Request) {
         auditMap.set(key, { ...r, upload_id: uploadId })
       })
       const auditRows = Array.from(auditMap.values())
-      await batchUpsert(supabase, 'bookings_audit_rows', auditRows, 'upload_id,file_code,date_of_change')
+      await batchUpsert(supabase, 'bookings_audit_rows', auditRows, { onConflict: 'upload_id,file_code,date_of_change' })
     }
 
     return NextResponse.json({ 

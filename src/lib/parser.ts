@@ -5,6 +5,7 @@
  */
 
 import * as XLSX from 'xlsx'
+import { getTemporada, seasonMonthIdx } from './season'
 
 // ─── Constantes ────────────────────────────────────────────────────────────
 const ESTADOS_OK = new Set([
@@ -119,7 +120,20 @@ function excelDateTimeToISO(val: unknown): string | null {
 function toNum(val: unknown): number {
   if (val == null || val === '') return 0
   if (typeof val === 'number') return val
-  const s = String(val).replace(/[^0-9.,\-]/g, '').replace(',', '.')
+  let s = String(val).replace(/[^0-9.,\-]/g, '')
+  if (!s) return 0
+  // Detectar separador decimal: el último '.' o ',' SOLO si parece decimal (1-2 dígitos
+  // detrás). Si tiene 3+ dígitos detrás es separador de miles (ej "1.234" → 1234, no 1.234).
+  const lastSep = Math.max(s.lastIndexOf('.'), s.lastIndexOf(','))
+  if (lastSep !== -1) {
+    const decimals = s.length - lastSep - 1
+    if (decimals <= 2) {
+      const intPart = s.slice(0, lastSep).replace(/[.,]/g, '')
+      s = `${intPart}.${s.slice(lastSep + 1)}`
+    } else {
+      s = s.replace(/[.,]/g, '') // todos son separadores de miles
+    }
+  }
   const n = parseFloat(s)
   return isNaN(n) ? 0 : n
 }
@@ -129,30 +143,15 @@ function toStr(val: unknown): string | null {
   return String(val).trim() || null
 }
 
-/** Normaliza CM: si viene como 25 → 0.25, si ya es 0.25 → 0.25 */
+/**
+ * Normaliza CM: si viene como 25 → 0.25, si ya es 0.25 → 0.25.
+ * Devuelve null SOLO si la celda está vacía/no numérica; un 0% legítimo se respeta.
+ * Usa |n|>1.5 para que también funcione con CM negativos (pérdidas) tipo -50 → -0.5.
+ */
 function normalizePct(val: unknown): number | null {
+  if (val == null || val === '') return null
   const n = toNum(val)
-  if (n === 0) return null
-  return n > 1.5 ? n / 100 : n
-}
-
-/** Temporada mayo→mayo */
-function getTemporada(isoDate: string | null): string | null {
-  if (!isoDate) return null
-  const d = new Date(isoDate)
-  const y = d.getFullYear(), m = d.getMonth() + 1
-  const start = m >= 5 ? y : y - 1
-  return `${String(start).slice(2)}/${String(start + 1).slice(2)}`
-}
-
-/** Índice de mes en temporada 25/26: May=1 … Apr=12 */
-function seasonMonthIdx(isoDate: string | null): number | null {
-  if (!isoDate) return null
-  const d = new Date(isoDate)
-  const y = d.getFullYear(), m = d.getMonth() + 1
-  if (y === 2025 && m >= 5 && m <= 12) return m - 4
-  if (y === 2026 && m >= 1 && m <= 4)  return m + 8
-  return null
+  return Math.abs(n) > 1.5 ? n / 100 : n
 }
 
 function isB2C(fileCode: string): boolean {
@@ -450,4 +449,5 @@ function parseTemp2425Sheet(wb: XLSX.WorkBook, sheetName: string, firstDataCol: 
 }
 
 // ─── Exportar helpers para uso en API route ────────────────────────────────
-export { ESTADOS_OK, AREA_MAP, isB2C, getTemporada, seasonMonthIdx }
+export { ESTADOS_OK, AREA_MAP, isB2C }
+export { getTemporada, seasonMonthIdx } from './season'

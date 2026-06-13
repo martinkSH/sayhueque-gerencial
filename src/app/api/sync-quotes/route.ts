@@ -10,11 +10,17 @@ import { BRANCH_MAP } from '@/lib/tourplan/constants'
 import { getLatestUpload, batchInsert } from '@/lib/supabase/batch'
 
 export async function POST(req: Request) {
+  // Permitir llamada con secret header para cron job (igual que sync-tourplan)
+  const authHeader = req.headers.get('authorization')
+  const cronSecret = process.env.CRON_SECRET
+  const isCron = cronSecret && authHeader === `Bearer ${cronSecret}`
   const supabase = createClient()
-  const profile = await getUserProfile()
-  
-  if (profile?.role !== 'admin') {
-    return NextResponse.json({ error: 'No autorizado' }, { status: 403 })
+
+  if (!isCron) {
+    const profile = await getUserProfile()
+    if (profile?.role !== 'admin') {
+      return NextResponse.json({ error: 'No autorizado' }, { status: 403 })
+    }
   }
 
   let pool: any = null

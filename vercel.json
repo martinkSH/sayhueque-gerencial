@@ -3,6 +3,10 @@
     {
       "path": "/api/sync-tourplan",
       "schedule": "0 10 * * *"
+    },
+    {
+      "path": "/api/sync-quotes",
+      "schedule": "15 10 * * *"
     }
   ]
 }

@@ -15,7 +15,6 @@ export default async function DetalleCMPage({
   const userProfile = await getUserProfile()
   const isAdmin = userProfile?.role === 'admin'
   const expandedUserAreas = isAdmin ? null : expandAreas(userProfile?.areas ?? [])
-  const temp = searchParams.temp ?? '25/26'
 
   const { data: lastUpload } = await supabase
     .from('uploads').select('id, filename').eq('status', 'ok')
@@ -26,6 +25,15 @@ export default async function DetalleCMPage({
   )
 
   const uploadId = lastUpload.id
+
+  // Temporadas con viajes confirmados (dinámicas). Default: 26/27 (la vigente).
+  const { data: tempsRaw } = await supabase.rpc('get_temporadas_confirmadas', {
+    p_upload_id: uploadId, p_areas: expandedUserAreas,
+  })
+  const temporadas = ((tempsRaw ?? []) as { temporada: string }[]).map(t => t.temporada)
+  const temp = searchParams.temp && temporadas.includes(searchParams.temp)
+    ? searchParams.temp
+    : temporadas.includes('26/27') ? '26/27' : (temporadas[0] ?? '26/27')
 
   // Áreas disponibles via RPC
   const { data: areasRaw } = await supabase
@@ -216,6 +224,7 @@ export default async function DetalleCMPage({
       areas={available}
       areaFiltro={areaFiltro}
       temp={temp}
+      temporadas={temporadas}
       rangoMin={rango.cm_min}
       rangoMax={rango.cm_max}
       isAdmin={isAdmin}

@@ -72,13 +72,12 @@ const DEFAULT_COLS: ColDef[] = [
   { key: 'cm',           label: 'CM %',        align: 'right' },
 ]
 
-const TEMPORADAS = ['25/26','24/25','26/27']
 const STORAGE_KEY = 'detalle_cm_column_order'
 
 export default function DetalleCMClient({
-  files, areas, areaFiltro, temp, rangoMin, rangoMax, isAdmin, excepciones: excepcionesInit, userNombre,
+  files, areas, areaFiltro, temp, temporadas, rangoMin, rangoMax, isAdmin, excepciones: excepcionesInit, userNombre,
 }: {
-  files: FileRow[]; areas: string[]; areaFiltro: string; temp: string
+  files: FileRow[]; areas: string[]; areaFiltro: string; temp: string; temporadas: string[]
   rangoMin: number; rangoMax: number; isAdmin: boolean
   excepciones: Excepcion[]; userNombre: string
 }) {
@@ -272,7 +271,7 @@ export default function DetalleCMClient({
           </p>
         </div>
         <div style={{ display: 'flex', gap: 6 }}>
-          {TEMPORADAS.map(t => (
+          {temporadas.map(t => (
             <a key={t} href={`?temp=${t}&area=${encodeURIComponent(areaFiltro)}`} style={{
               padding: '5px 14px', borderRadius: 8, fontSize: 13, textDecoration: 'none',
               background: temp === t ? 'var(--teal-600)' : 'var(--surface2)',

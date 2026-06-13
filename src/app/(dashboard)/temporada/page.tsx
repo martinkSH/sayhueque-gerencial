@@ -1,7 +1,6 @@
 import { createClient } from '@/lib/supabase/server'
 import { getUserProfile, expandAreas, B2C_AREAS } from '@/lib/user-context'
-import { format } from 'date-fns'
-import { es } from 'date-fns/locale'
+import { getTemporada } from '@/lib/season'
 
 export const dynamic = 'force-dynamic'
 
@@ -36,9 +35,11 @@ function emptyArea(): AreaData {
   return { viajes: 0, pax: 0, venta: 0, costo: 0, ganancia: 0 }
 }
 
-const FIN_TEMPORADA = '2026-04-30'
-
-export default async function TemporadaPage() {
+export default async function TemporadaPage({
+  searchParams,
+}: {
+  searchParams: { temp?: string }
+}) {
   const supabase = createClient()
   const userProfile = await getUserProfile()
   const isAdmin = userProfile?.role === 'admin'
@@ -58,10 +59,27 @@ export default async function TemporadaPage() {
     )
   }
 
-  const { data: rawRows } = await supabase.rpc('get_temporada_por_area', {
+  // Temporadas con viajes confirmados (para el selector)
+  const { data: tempsRaw } = await supabase.rpc('get_temporadas_confirmadas', {
     p_upload_id: lastUpload.id,
-    p_today: today,
-    p_fin: FIN_TEMPORADA,
+    p_areas: expandedUserAreas,
+  })
+  const temporadasDisp = ((tempsRaw ?? []) as { temporada: string }[])
+    .map(t => t.temporada)
+
+  // Temporada elegida: la del query param si es válida; si no, la actual (por
+  // fecha de hoy); si esa no tiene viajes, la primera disponible.
+  const currentSeason = getTemporada(today) ?? ''
+  const temp =
+    searchParams.temp && temporadasDisp.includes(searchParams.temp)
+      ? searchParams.temp
+      : temporadasDisp.includes(currentSeason)
+        ? currentSeason
+        : (temporadasDisp[0] ?? currentSeason)
+
+  const { data: rawRows } = await supabase.rpc('get_temporada_resumen', {
+    p_upload_id: lastUpload.id,
+    p_temporada: temp,
     p_areas: expandedUserAreas,
   })
 
@@ -165,12 +183,27 @@ export default async function TemporadaPage() {
     <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
 
       {/* Header */}
-      <div>
-        <h1 style={{ fontSize: 22, fontWeight: 600, color: 'var(--text)', margin: 0 }}>Resumen Temporada 25/26</h1>
-        <p style={{ color: 'var(--muted)', fontSize: 13, marginTop: 4 }}>
-          Viajes terminados · en curso · futuros hasta 30/04
-          {areaLabel && <span style={{ color: 'var(--teal-400)', marginLeft: 8 }}>· {areaLabel}</span>}
-        </p>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: 12 }}>
+        <div>
+          <h1 style={{ fontSize: 22, fontWeight: 600, color: 'var(--text)', margin: 0 }}>Resumen Temporada {temp}</h1>
+          <p style={{ color: 'var(--muted)', fontSize: 13, marginTop: 4 }}>
+            Viajes terminados · en curso · futuros
+            {areaLabel && <span style={{ color: 'var(--teal-400)', marginLeft: 8 }}>· {areaLabel}</span>}
+          </p>
+        </div>
+        {/* Selector de temporadas con viajes confirmados */}
+        {temporadasDisp.length > 1 && (
+          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+            {temporadasDisp.map(t => (
+              <a key={t} href={`?temp=${encodeURIComponent(t)}`} style={{
+                padding: '5px 14px', borderRadius: 8, fontSize: 13, textDecoration: 'none',
+                background: temp === t ? 'var(--teal-600)' : 'var(--surface2)',
+                color: temp === t ? '#fff' : 'var(--muted)',
+                border: `1px solid ${temp === t ? 'var(--teal-600)' : 'var(--border)'}`,
+              }}>{t}</a>
+            ))}
+          </div>
+        )}
       </div>
 
       {/* Totales por corte - KPI cards */}
@@ -215,7 +248,7 @@ export default async function TemporadaPage() {
       <div className="card" style={{ overflow: 'hidden' }}>
         <div style={{ padding: '14px 20px', borderBottom: '1px solid var(--border)' }}>
           <span style={{ fontSize: 14, fontWeight: 600, color: 'var(--text)' }}>
-            {isAdmin ? 'Desglose por área' : 'Desglose'} — temporada 25/26
+            {isAdmin ? 'Desglose por área' : 'Desglose'} — temporada {temp}
           </span>
         </div>
         <div style={{ overflowX: 'auto' }}>

@@ -1,12 +1,15 @@
 import { createClient } from '@/lib/supabase/server'
-import { getUserProfile, expandAreas } from '@/lib/user-context'
+import { getUserProfile, expandAreas, B2C_AREAS } from '@/lib/user-context'
 import { TrendingUp } from 'lucide-react'
+import { formatUSD, cmColor } from '@/lib/format'
 
 export const dynamic = 'force-dynamic'
 
-import { formatUSD, cmColor } from '@/lib/format'
-
-const TEMPORADAS = ['25/26', '24/25', '23/24', '26/27']
+// Áreas fijas para el filtro (antes salían combinaciones concatenadas que mareaban).
+const AREA_OPTIONS = ['Plataformas', 'B2C', 'Aliwen', 'DMC FITS', 'Grupos DMC']
+function areaToBranches(a: string): string[] {
+  return a === 'B2C' ? B2C_AREAS : [a]
+}
 
 const PERIODOS = [
   { value: 'todos',     label: 'Todos' },
@@ -18,14 +21,12 @@ const PERIODOS = [
 export default async function VendedoresPage({
   searchParams,
 }: {
-  searchParams: { temp?: string; area?: string; periodo?: string }
+  searchParams: { temp?: string; area?: string; periodo?: string; sort?: string; dir?: string }
 }) {
   const supabase = createClient()
   const userProfile = await getUserProfile()
   const isAdmin = userProfile?.role === 'admin'
-  const userAreas = userProfile?.areas ?? []
-  const temp = searchParams.temp ?? '25/26'
-  const areaFiltro = searchParams.area ?? 'todas'
+  const expandedUserAreas = isAdmin ? null : expandAreas(userProfile?.areas ?? [])
   const periodo = searchParams.periodo ?? 'todos'
 
   const { data: lastUpload } = await supabase
@@ -34,40 +35,60 @@ export default async function VendedoresPage({
 
   if (!lastUpload) return <div style={{ textAlign: 'center', marginTop: 80, color: 'var(--muted)' }}>Sin datos.</div>
 
-  const { data: rawRanking } = await supabase
-    .rpc('get_ranking_vendedores', {
-      p_upload_id: lastUpload.id,
-      p_temporada: temp,
-      p_periodo: periodo === 'todos' ? null : periodo,
-    })
+  // Temporadas con vendedores (default 26/27)
+  const { data: tempsRaw } = await supabase.rpc('get_temporadas_con_vendedores', {
+    p_upload_id: lastUpload.id, p_areas: expandedUserAreas,
+  })
+  const temporadas = ((tempsRaw ?? []) as { temporada: string }[]).map(t => t.temporada)
+  const temp = searchParams.temp && temporadas.includes(searchParams.temp)
+    ? searchParams.temp
+    : temporadas.includes('26/27') ? '26/27' : (temporadas[0] ?? '26/27')
 
-  type VRow = { vendedor: string; area: string; viajes: number; pax: number; venta: number; ganancia: number }
-  const allRanking = (rawRanking ?? []) as VRow[]
+  // Áreas visibles según rol
+  const areaOptions = expandedUserAreas
+    ? AREA_OPTIONS.filter(a => a === 'B2C'
+        ? expandedUserAreas.some(b => B2C_AREAS.includes(b))
+        : expandedUserAreas.includes(a))
+    : AREA_OPTIONS
+  const areaFiltro = searchParams.area && areaOptions.includes(searchParams.area)
+    ? searchParams.area
+    : areaOptions.includes('B2C') ? 'B2C' : areaOptions[0]
 
-  const expandedUserAreas = isAdmin ? null : expandAreas(userAreas)
-  const rankingPorRol = expandedUserAreas
-    ? allRanking.filter(r => {
-        if (r.area === 'B2C') return expandedUserAreas.some(a => ['Web','Plataformas','Walk In'].includes(a))
-        return expandedUserAreas.includes(r.area)
-      })
-    : allRanking
+  let branches = areaFiltro ? areaToBranches(areaFiltro) : []
+  if (expandedUserAreas) branches = branches.filter(b => expandedUserAreas.includes(b))
 
-  const areasSet = new Set(rankingPorRol.map(r => r.area))
-  const areaOptions = ['todas', ...Array.from(areasSet).sort()]
+  type VRow = { vendedor: string; area: string; viajes: number; pax: number; venta: number; ganancia: number; cm: number }
+  const { data: rawRanking } = await supabase.rpc('get_ranking_vendedores_area', {
+    p_upload_id: lastUpload.id,
+    p_temporada: temp,
+    p_areas: branches.length > 0 ? branches : null,
+    p_periodo: periodo === 'todos' ? null : periodo,
+  })
+  const ranking: VRow[] = ((rawRanking ?? []) as Omit<VRow, 'cm'>[]).map(r => ({
+    ...r, cm: r.venta > 0 ? r.ganancia / r.venta : 0,
+  }))
 
-  const ranking = areaFiltro === 'todas'
-    ? rankingPorRol
-    : rankingPorRol.filter(r => r.area === areaFiltro)
+  // Orden por columna de datos (click en encabezado). Default: venta desc.
+  const SORT_KEYS = ['viajes', 'pax', 'venta', 'ganancia', 'cm'] as const
+  type SortKey = typeof SORT_KEYS[number]
+  const sortKey: SortKey = (SORT_KEYS as readonly string[]).includes(searchParams.sort ?? '')
+    ? (searchParams.sort as SortKey) : 'venta'
+  const sortDir: 'asc' | 'desc' = searchParams.dir === 'asc' ? 'asc' : 'desc'
+  ranking.sort((a, b) => {
+    const d = (a[sortKey] ?? 0) - (b[sortKey] ?? 0)
+    return sortDir === 'asc' ? d : -d
+  })
 
   const totalVenta    = ranking.reduce((s, r) => s + r.venta, 0)
   const totalGanancia = ranking.reduce((s, r) => s + r.ganancia, 0)
   const totalViajes   = ranking.reduce((s, r) => s + r.viajes, 0)
+  const totalPax      = ranking.reduce((s, r) => s + r.pax, 0)
   const totalCM       = totalVenta > 0 ? totalGanancia / totalVenta : 0
   const periodoLabel  = PERIODOS.find(p => p.value === periodo)?.label ?? 'Todos'
 
   function buildHref(overrides: Record<string, string>) {
-    const p = { temp, area: areaFiltro, periodo, ...overrides }
-    return `?temp=${p.temp}&area=${encodeURIComponent(p.area)}&periodo=${p.periodo}`
+    const p = { temp, area: areaFiltro ?? '', periodo, sort: sortKey, dir: sortDir, ...overrides }
+    return `?temp=${encodeURIComponent(p.temp)}&area=${encodeURIComponent(p.area)}&periodo=${p.periodo}&sort=${p.sort}&dir=${p.dir}`
   }
 
   return (
@@ -78,11 +99,11 @@ export default async function VendedoresPage({
         <div>
           <h1 style={{ fontSize: 22, fontWeight: 600, color: 'var(--text)', margin: 0 }}>Ranking Vendedores</h1>
           <p style={{ color: 'var(--muted)', fontSize: 13, marginTop: 4 }}>
-            Temporada {temp} · {periodoLabel.toLowerCase()} · {lastUpload.filename}
+            Temporada {temp} · {areaFiltro ?? '—'} · {periodoLabel.toLowerCase()} · {lastUpload.filename}
           </p>
         </div>
         <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-          {TEMPORADAS.map(t => (
+          {temporadas.map(t => (
             <a key={t} href={buildHref({ temp: t })} style={{
               padding: '5px 14px', borderRadius: 8, fontSize: 13, textDecoration: 'none',
               background: temp === t ? 'var(--teal-600)' : 'var(--surface2)',
@@ -104,7 +125,7 @@ export default async function VendedoresPage({
               background: areaFiltro === a ? 'var(--surface2)' : 'transparent',
               color: areaFiltro === a ? 'var(--text)' : 'var(--muted)',
               border: `1px solid ${areaFiltro === a ? 'var(--teal-600)' : 'var(--border)'}`,
-            }}>{a === 'todas' ? 'Todas las áreas' : a}</a>
+            }}>{a}</a>
           ))}
         </div>
 
@@ -128,55 +149,59 @@ export default async function VendedoresPage({
         <div style={{ padding: '14px 20px', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', gap: 8 }}>
           <TrendingUp size={15} style={{ color: 'var(--teal-400)' }} />
           <span style={{ fontSize: 14, fontWeight: 600, color: 'var(--text)' }}>
-            {ranking.length} vendedores · {areaFiltro === 'todas' ? 'todas las áreas' : areaFiltro} · {periodoLabel}
+            {ranking.length} vendedores · {areaFiltro ?? '—'} · {periodoLabel}
           </span>
         </div>
         <div style={{ overflowX: 'auto' }}>
           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
             <thead>
               <tr style={{ background: 'var(--surface2)' }}>
-                {['#', 'Vendedor', 'Área', 'Viajes', 'Pax', 'Venta', 'Ganancia', 'CM'].map(h => (
-                  <th key={h} style={{
-                    padding: '10px 16px',
-                    textAlign: ['#', 'Vendedor', 'Área'].includes(h) ? 'left' : 'right',
-                    color: 'var(--muted)', fontWeight: 500, fontSize: 12, whiteSpace: 'nowrap',
-                  }}>{h}</th>
-                ))}
+                {([['#', null], ['Vendedor', null], ['Área', null], ['Viajes', 'viajes'], ['Pax', 'pax'], ['Venta', 'venta'], ['Ganancia', 'ganancia'], ['CM', 'cm']] as [string, SortKey | null][]).map(([h, key]) => {
+                  const left = ['#', 'Vendedor', 'Área'].includes(h)
+                  const active = key !== null && sortKey === key
+                  return (
+                    <th key={h} style={{
+                      padding: '10px 16px', textAlign: left ? 'left' : 'right',
+                      color: active ? 'var(--teal-400)' : 'var(--muted)', fontWeight: active ? 700 : 500, fontSize: 12, whiteSpace: 'nowrap',
+                    }}>
+                      {key === null ? h : (
+                        <a href={buildHref({ sort: key, dir: active && sortDir === 'desc' ? 'asc' : 'desc' })}
+                          style={{ color: 'inherit', textDecoration: 'none', cursor: 'pointer' }}>
+                          {h}{active ? (sortDir === 'desc' ? ' ↓' : ' ↑') : ''}
+                        </a>
+                      )}
+                    </th>
+                  )
+                })}
               </tr>
             </thead>
             <tbody>
               {ranking.length === 0 ? (
                 <tr><td colSpan={8} style={{ padding: '28px 20px', textAlign: 'center', color: 'var(--muted)' }}>Sin datos</td></tr>
-              ) : ranking.map((r, i) => {
-                const cm = r.venta > 0 ? r.ganancia / r.venta : 0
-                return (
-                  <tr key={`${r.vendedor}-${r.area}`} style={{ borderTop: '1px solid var(--border)', background: i % 2 === 0 ? 'transparent' : 'rgba(255,255,255,0.01)' }}>
-                    <td style={{ padding: '10px 16px', color: 'var(--muted)', fontFamily: 'var(--font-mono)', fontSize: 12 }}>
-                      {i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : `${i + 1}`}
-                    </td>
-                    <td style={{ padding: '10px 16px', color: 'var(--text)', fontWeight: 500 }}>{r.vendedor}</td>
-                    <td style={{ padding: '10px 16px' }}>
-                      <span style={{
-                        fontSize: 11, padding: '2px 8px', borderRadius: 6, fontWeight: 500,
-                        background: r.area === 'B2C' ? 'rgba(13,148,136,0.15)' : 'rgba(255,255,255,0.06)',
-                        color: r.area === 'B2C' ? 'var(--teal-400)' : 'var(--text-dim)',
-                      }}>{r.area}</span>
-                    </td>
-                    <td style={{ padding: '10px 16px', textAlign: 'right', color: 'var(--text)', fontFamily: 'var(--font-mono)' }}>{r.viajes}</td>
-                    <td style={{ padding: '10px 16px', textAlign: 'right', color: 'var(--muted)', fontFamily: 'var(--font-mono)' }}>{r.pax}</td>
-                    <td style={{ padding: '10px 16px', textAlign: 'right', color: 'var(--text)', fontFamily: 'var(--font-mono)' }}>{formatUSD(r.venta)}</td>
-                    <td style={{ padding: '10px 16px', textAlign: 'right', color: r.ganancia < 0 ? '#f87171' : '#4ade80', fontFamily: 'var(--font-mono)', fontWeight: 500 }}>{formatUSD(r.ganancia)}</td>
-                    <td style={{ padding: '10px 16px', textAlign: 'right', fontFamily: 'var(--font-mono)', fontWeight: 500,
-                      color: cmColor(cm)
-                    }}>{(cm * 100).toFixed(1)}%</td>
-                  </tr>
-                )
-              })}
+              ) : ranking.map((r, i) => (
+                <tr key={`${r.vendedor}-${r.area}`} style={{ borderTop: '1px solid var(--border)', background: i % 2 === 0 ? 'transparent' : 'rgba(255,255,255,0.01)' }}>
+                  <td style={{ padding: '10px 16px', color: 'var(--muted)', fontFamily: 'var(--font-mono)', fontSize: 12 }}>
+                    {i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : `${i + 1}`}
+                  </td>
+                  <td style={{ padding: '10px 16px', color: 'var(--text)', fontWeight: 500 }}>{r.vendedor}</td>
+                  <td style={{ padding: '10px 16px' }}>
+                    <span style={{
+                      fontSize: 11, padding: '2px 8px', borderRadius: 6, fontWeight: 500,
+                      background: 'rgba(255,255,255,0.06)', color: 'var(--text-dim)',
+                    }}>{r.area}</span>
+                  </td>
+                  <td style={{ padding: '10px 16px', textAlign: 'right', color: 'var(--text)', fontFamily: 'var(--font-mono)' }}>{r.viajes}</td>
+                  <td style={{ padding: '10px 16px', textAlign: 'right', color: 'var(--muted)', fontFamily: 'var(--font-mono)' }}>{r.pax}</td>
+                  <td style={{ padding: '10px 16px', textAlign: 'right', color: 'var(--text)', fontFamily: 'var(--font-mono)' }}>{formatUSD(r.venta)}</td>
+                  <td style={{ padding: '10px 16px', textAlign: 'right', color: r.ganancia < 0 ? '#f87171' : '#4ade80', fontFamily: 'var(--font-mono)', fontWeight: 500 }}>{formatUSD(r.ganancia)}</td>
+                  <td style={{ padding: '10px 16px', textAlign: 'right', fontFamily: 'var(--font-mono)', fontWeight: 500, color: cmColor(r.cm) }}>{(r.cm * 100).toFixed(1)}%</td>
+                </tr>
+              ))}
               {ranking.length > 0 && (
                 <tr style={{ borderTop: '2px solid var(--border)', background: 'var(--surface2)' }}>
                   <td colSpan={3} style={{ padding: '10px 16px', color: 'var(--text)', fontWeight: 700 }}>TOTAL</td>
                   <td style={{ padding: '10px 16px', textAlign: 'right', color: 'var(--text)', fontFamily: 'var(--font-mono)', fontWeight: 700 }}>{totalViajes}</td>
-                  <td style={{ padding: '10px 16px', textAlign: 'right', color: 'var(--muted)', fontFamily: 'var(--font-mono)' }}>—</td>
+                  <td style={{ padding: '10px 16px', textAlign: 'right', color: 'var(--muted)', fontFamily: 'var(--font-mono)', fontWeight: 700 }}>{totalPax}</td>
                   <td style={{ padding: '10px 16px', textAlign: 'right', color: 'var(--text)', fontFamily: 'var(--font-mono)', fontWeight: 700 }}>{formatUSD(totalVenta)}</td>
                   <td style={{ padding: '10px 16px', textAlign: 'right', color: '#4ade80', fontFamily: 'var(--font-mono)', fontWeight: 700 }}>{formatUSD(totalGanancia)}</td>
                   <td style={{ padding: '10px 16px', textAlign: 'right', color: 'var(--teal-400)', fontFamily: 'var(--font-mono)', fontWeight: 700 }}>{(totalCM * 100).toFixed(1)}%</td>

@@ -60,9 +60,10 @@ export default async function ClientesPage({
 
   const hasBc2 = availableRaw.some(a => B2C_AREAS.includes(a))
   const nonB2C = availableRaw.filter(a => !B2C_AREAS.includes(a)).sort()
-  const areaOptions = [...(hasBc2 ? ['B2C'] : []), ...nonB2C]
+  // 'TODOS' = consolidado de todos los clientes sumando todas sus áreas.
+  const areaOptions = ['TODOS', ...(hasBc2 ? ['B2C'] : []), ...nonB2C]
 
-  const areaFiltro = searchParams.area ?? areaOptions[0] ?? 'B2C'
+  const areaFiltro = searchParams.area ?? areaOptions[0] ?? 'TODOS'
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>

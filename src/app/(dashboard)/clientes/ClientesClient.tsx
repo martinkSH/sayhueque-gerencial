@@ -2,11 +2,11 @@
 
 import { useState, useEffect } from 'react'
 import { createClient } from '@/lib/supabase/client'
-import { Users, Calendar } from 'lucide-react'
+import { Users, Calendar, Search } from 'lucide-react'
 import { useRouter } from 'next/navigation'
 
 import { formatUSD, cmColor } from '@/lib/format'
-import { B2C_AREAS } from '@/lib/areas'
+import { B2C_AREAS, ALL_AREAS } from '@/lib/areas'
 
 type CRow = { 
   cliente: string
@@ -46,6 +46,7 @@ export default function ClientesClient({
   const [fechaHasta, setFechaHasta] = useState(initialHasta)
   const [clientes, setClientes] = useState<CRow[]>([])
   const [loading, setLoading] = useState(false)
+  const [search, setSearch] = useState('')
 
 
   useEffect(() => {
@@ -55,9 +56,11 @@ export default function ClientesClient({
   async function loadClientes() {
     setLoading(true)
     
-    const areasReales = areaFiltro === 'B2C'
-      ? (expandedUserAreas ? B2C_AREAS.filter(a => expandedUserAreas.includes(a)) : B2C_AREAS)
-      : [areaFiltro]
+    const areasReales = areaFiltro === 'TODOS'
+      ? (expandedUserAreas ?? ALL_AREAS)
+      : areaFiltro === 'B2C'
+        ? (expandedUserAreas ? B2C_AREAS.filter(a => expandedUserAreas.includes(a)) : B2C_AREAS)
+        : [areaFiltro]
 
     const { data: rawClientes } = await supabase
       .rpc('get_clientes_por_area_fechas', {
@@ -81,10 +84,14 @@ export default function ClientesClient({
     router.push(`/clientes?${params.toString()}`)
   }
 
-  const totalVenta = clientes.reduce((s, r) => s + r.venta, 0)
-  const totalGanancia = clientes.reduce((s, r) => s + r.ganancia, 0)
-  const totalViajes = clientes.reduce((s, r) => s + r.viajes, 0)
-  const totalQuotes = clientes.reduce((s, r) => s + r.quotes, 0)
+  // Búsqueda instantánea por nombre de cliente (filtro client-side, sin refetch)
+  const q = search.trim().toLowerCase()
+  const filtered = q ? clientes.filter(c => c.cliente?.toLowerCase().includes(q)) : clientes
+
+  const totalVenta = filtered.reduce((s, r) => s + r.venta, 0)
+  const totalGanancia = filtered.reduce((s, r) => s + r.ganancia, 0)
+  const totalViajes = filtered.reduce((s, r) => s + r.viajes, 0)
+  const totalQuotes = filtered.reduce((s, r) => s + r.quotes, 0)
   const totalCM = totalVenta > 0 ? totalGanancia / totalVenta : 0
   const totalConversion = totalQuotes > 0 ? totalViajes / totalQuotes : 0
 
@@ -193,11 +200,27 @@ export default function ClientesClient({
 
       {/* Tabla de clientes */}
       <div className="card" style={{ overflow: 'hidden' }}>
-        <div style={{ padding: '14px 20px', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', gap: 8 }}>
-          <Users size={15} style={{ color: 'var(--teal-400)' }} />
-          <span style={{ fontSize: 14, fontWeight: 600, color: 'var(--text)' }}>
-            {clientes.length} clientes · {areaFiltro} · {temp}
-          </span>
+        <div style={{ padding: '14px 20px', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <Users size={15} style={{ color: 'var(--teal-400)' }} />
+            <span style={{ fontSize: 14, fontWeight: 600, color: 'var(--text)' }}>
+              {filtered.length} clientes · {areaFiltro} · {temp}
+            </span>
+          </div>
+          <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
+            <Search size={14} style={{ position: 'absolute', left: 10, color: 'var(--muted)', pointerEvents: 'none' }} />
+            <input
+              type="text"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Buscar cliente..."
+              style={{
+                padding: '7px 12px 7px 32px', borderRadius: 8,
+                border: '1px solid var(--border)', background: 'var(--surface2)',
+                color: 'var(--text)', fontSize: 13, outline: 'none', minWidth: 220,
+              }}
+            />
+          </div>
         </div>
         
         {loading ? (
@@ -219,19 +242,19 @@ export default function ClientesClient({
                 </tr>
               </thead>
               <tbody>
-                {clientes.length === 0 ? (
+                {filtered.length === 0 ? (
                   <tr>
                     <td colSpan={9} style={{ padding: '40px 20px', textAlign: 'center', color: 'var(--muted)' }}>
-                      No hay clientes en este rango de fechas
+                      {clientes.length === 0 ? 'No hay clientes en este rango de fechas' : 'Sin resultados para la búsqueda'}
                     </td>
                   </tr>
                 ) : (
                   <>
-                    {clientes.map((r, i) => {
+                    {filtered.map((r, i) => {
                       const cm = r.venta > 0 ? r.ganancia / r.venta : 0
                       const conv = r.quotes > 0 ? (r.viajes / r.quotes) * 100 : 0
                       return (
-                        <tr key={i} style={{
+                        <tr key={r.cliente} style={{
                           borderTop: '1px solid var(--border)',
                           background: i % 2 === 0 ? 'transparent' : 'rgba(255,255,255,0.01)',
                         }}>

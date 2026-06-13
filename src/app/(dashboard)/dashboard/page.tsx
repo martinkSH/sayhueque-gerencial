@@ -15,7 +15,12 @@ export const dynamic = 'force-dynamic'
 
 import { formatUSD } from '@/lib/format'
 
-const FIN_TEMPORADA = '2026-04-30'
+// Fin de la temporada vigente = próximo 30 de abril (temporada Say Hueque: may→abr).
+// Ej: hoy jun-2026 → 2027-04-30; hoy feb-2026 → 2026-04-30.
+function finTemporadaVigente(todayISO: string): string {
+  const [y, m] = todayISO.split('-').map(Number)
+  return `${m >= 5 ? y + 1 : y}-04-30`
+}
 
 export default async function DashboardPage({
   searchParams,
@@ -27,6 +32,7 @@ export default async function DashboardPage({
   const isAdmin = userProfile?.role === 'admin'
   const areaDetalle = searchParams.area ?? null
   const today = new Date().toISOString().slice(0, 10)
+  const FIN_TEMPORADA = finTemporadaVigente(today)
 
   const p_areas: string[] | null = isAdmin
     ? null
